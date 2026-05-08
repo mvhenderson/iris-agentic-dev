@@ -222,6 +222,10 @@ pub struct QueryParams {
     pub parameters: Vec<String>,
     #[serde(default = "default_namespace")]
     pub namespace: String,
+    /// If true, bypass SQL safety validation. Use only for intentional administrative queries.
+    /// Has no effect on production IRIS instances (where write tools are disabled).
+    #[serde(default)]
+    pub force: bool,
 }
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListContainersParams {
@@ -435,6 +439,154 @@ pub fn write_open_hint(namespace: &str, document: &str) {
         let json = serde_json::json!({"uri": uri, "ts": ts});
         let _ = std::fs::write(dir.join("open-hint.json"), json.to_string());
     }
+}
+
+// ── SQL safety gate ───────────────────────────────────────────────────────────
+
+/// Validates that a SQL string is read-only before forwarding to IRIS.
+///
+/// Processing pipeline:
+/// 1. Strip `/* ... */` block comments
+/// 2. Strip `-- ...` line comments
+/// 3. Return `Err("EMPTY")` if result is whitespace-only
+/// 4. Walk remaining chars tracking quote depth; skip `'...'` and `"..."` content
+/// 5. Check each unquoted word token against the blocked keyword list (case-insensitive, word-boundary)
+/// 6. Check for `SELECT ... INTO <non-paren>` pattern (DDL via SELECT INTO)
+///
+/// Returns `Ok(())` if safe, `Err(keyword)` with the offending keyword if blocked.
+pub fn validate_read_only_sql(sql: &str) -> Result<(), String> {
+    const BLOCKED: &[&str] = &[
+        "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "MERGE", "TRUNCATE", "EXEC",
+        "EXECUTE", "BULK", "LOAD", "KILL", "LOCK",
+    ];
+
+    // Step 1: strip /* ... */ block comments
+    let mut cleaned = String::with_capacity(sql.len());
+    let bytes = sql.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i += 2; // skip */
+            cleaned.push(' '); // preserve word boundary
+        } else {
+            cleaned.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    // Step 2: strip -- line comments
+    let mut no_line_comments = String::with_capacity(cleaned.len());
+    for line in cleaned.lines() {
+        if let Some(pos) = line.find("--") {
+            no_line_comments.push_str(&line[..pos]);
+        } else {
+            no_line_comments.push_str(line);
+        }
+        no_line_comments.push(' ');
+    }
+    let cleaned = no_line_comments;
+
+    // Step 3: empty check
+    if cleaned.trim().is_empty() {
+        return Err("EMPTY".to_string());
+    }
+
+    // Steps 4+5: walk chars, skip quoted content, check word tokens
+    let chars: Vec<char> = cleaned.chars().collect();
+    let n = chars.len();
+    let upper = cleaned.to_uppercase();
+    let upper_chars: Vec<char> = upper.chars().collect();
+
+    let mut idx = 0;
+    while idx < n {
+        let c = chars[idx];
+        // Skip single-quoted string literals
+        if c == '\'' {
+            idx += 1;
+            while idx < n && chars[idx] != '\'' {
+                if chars[idx] == '\\' {
+                    idx += 1;
+                }
+                idx += 1;
+            }
+            idx += 1; // closing quote
+            continue;
+        }
+        // Skip double-quoted identifiers
+        if c == '"' {
+            idx += 1;
+            while idx < n && chars[idx] != '"' {
+                idx += 1;
+            }
+            idx += 1;
+            continue;
+        }
+        // Check for keyword match at this position
+        for kw in BLOCKED {
+            let kw_len = kw.len();
+            if idx + kw_len > n {
+                continue;
+            }
+            // Compare against uppercased chars
+            let matches = upper_chars[idx..idx + kw_len]
+                .iter()
+                .zip(kw.chars())
+                .all(|(a, b)| *a == b);
+            if !matches {
+                continue;
+            }
+            // Word boundary: character before must be non-alphanumeric/non-underscore (or start)
+            let before_ok = idx == 0 || {
+                let bc = chars[idx - 1];
+                !bc.is_alphanumeric() && bc != '_'
+            };
+            // Word boundary: character after must be non-alphanumeric/non-underscore (or end)
+            let after_ok = idx + kw_len >= n || {
+                let ac = chars[idx + kw_len];
+                !ac.is_alphanumeric() && ac != '_'
+            };
+            if before_ok && after_ok {
+                return Err(kw.to_string());
+            }
+        }
+        idx += 1;
+    }
+
+    // Step 6: check for SELECT ... INTO <identifier> (not INTO subquery)
+    // Find "INTO" token not followed by '('
+    let upper_str = upper.as_str();
+    let mut search_start = 0;
+    while let Some(pos) = upper_str[search_start..].find("INTO") {
+        let abs_pos = search_start + pos;
+        // Word boundary check
+        let before_ok = abs_pos == 0 || {
+            let bc = upper_chars[abs_pos - 1];
+            !bc.is_alphanumeric() && bc != '_'
+        };
+        let after_ok = abs_pos + 4 >= n || {
+            let ac = upper_chars[abs_pos + 4];
+            !ac.is_alphanumeric() && ac != '_'
+        };
+        if before_ok && after_ok {
+            // Check what follows INTO (skip whitespace)
+            let mut after = abs_pos + 4;
+            while after < n && chars[after].is_whitespace() {
+                after += 1;
+            }
+            // If followed by '(' it's INTO a subquery — allowed
+            // If followed by anything else (identifier, #, @, etc.) — DDL, block it
+            if after < n && chars[after] != '(' {
+                return Err("SELECT INTO".to_string());
+            }
+        }
+        search_start = abs_pos + 1;
+    }
+
+    Ok(())
 }
 
 fn err_json_with_url(
@@ -1688,14 +1840,44 @@ impl IrisTools {
     }
 
     #[tool(
-        description = "Execute a SQL query on IRIS via Atelier REST. Returns rows as a JSON array with column names as keys. Supports SELECT, INSERT, UPDATE, DELETE. No Python required."
+        description = "Execute a SQL SELECT query on IRIS via Atelier REST. Returns rows as a JSON array with column names as keys. By default, destructive SQL (DROP, DELETE, INSERT, UPDATE, ALTER, CREATE, MERGE, TRUNCATE, EXEC, EXECUTE, BULK, LOAD, KILL, LOCK, SELECT INTO) is blocked before reaching IRIS. Set force: true to bypass validation for intentional administrative queries — has no effect on production instances where write tools are disabled. No Python required."
     )]
     async fn iris_query(
         &self,
         Parameters(p): Parameters<QueryParams>,
     ) -> Result<CallToolResult, McpError> {
+        tracing::info!(namespace = %p.namespace, force = p.force, "iris_query");
+
+        // SQL safety gate — validate before any network call
+        let skip_validation = p.force && self.write_tools_enabled;
+        if !skip_validation {
+            match validate_read_only_sql(&p.query) {
+                Err(ref kw) if kw == "EMPTY" => {
+                    self.record_call("iris_query", false);
+                    return ok_json(serde_json::json!({
+                        "success": false,
+                        "error_code": "EMPTY_QUERY",
+                        "error": "SQL query is empty after removing comments.",
+                    }));
+                }
+                Err(kw) => {
+                    self.record_call("iris_query", false);
+                    let mut resp = serde_json::json!({
+                        "success": false,
+                        "error_code": "SQL_WRITE_BLOCKED",
+                        "error": format!("Destructive SQL keyword '{}' is not allowed. Use force: true to override.", kw),
+                        "blocked_keyword": kw,
+                    });
+                    if p.force && !self.write_tools_enabled {
+                        resp["force_ignored"] = serde_json::Value::Bool(true);
+                    }
+                    return ok_json(resp);
+                }
+                Ok(()) => {}
+            }
+        }
+
         let iris = self.get_iris()?;
-        tracing::info!(namespace = %p.namespace, "iris_query");
         let client = self.http_client();
         let query_url = iris.versioned_ns_url(&p.namespace, "/action/query");
         let resp = client
