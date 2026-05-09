@@ -194,3 +194,11 @@ path = "tests/unit/test_live_reload.rs"
 [[test]]
 name = "test_live_reload_e2e"
 path = "tests/integration/test_live_reload_e2e.rs"
+
+[[test]]
+name = "test_sql_translate"
+path = "tests/unit/test_sql_translate.rs"
+
+[[test]]
+name = "test_sql_translate_e2e"
+path = "tests/integration/test_sql_translate_e2e.rs"

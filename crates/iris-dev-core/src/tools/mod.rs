@@ -142,6 +142,459 @@ impl ConfigWatcher {
     }
 }
 
+// ── &sql macro translation (035) ─────────────────────────────────────────────
+
+/// Result of translating `&sql(...)` macros to `%SQL.Statement` calls.
+pub struct TranslationResult {
+    /// The code after translation (equals input if `found` is false).
+    pub translated_code: String,
+    /// Whether any `&sql(...)` macros were found and processed.
+    pub found: bool,
+    /// Warnings for constructs that could not be safely translated (left unchanged).
+    pub warnings: Vec<String>,
+}
+
+/// Translate `&sql(...)` embedded SQL macros in ObjectScript code to
+/// runtime-compatible `%SQL.Statement` class method calls.
+///
+/// This is a pure text transformation — no IRIS network call is made.
+/// SELECT INTO uses prepare/execute/get; DML uses %ExecDirect.
+/// SQLCODE and %msg on the line immediately following the macro are rewritten
+/// to read from the generated result set object; all other references are untouched.
+pub fn translate_sql_macros(code: &str) -> TranslationResult {
+    if !code.contains("&sql(") {
+        return TranslationResult {
+            translated_code: code.to_string(),
+            found: false,
+            warnings: vec![],
+        };
+    }
+
+    let mut output = String::with_capacity(code.len() * 2);
+    let mut warnings = vec![];
+    let mut rs_counter: u32 = 0;
+    let chars: Vec<char> = code.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    let mut found = false;
+
+    while i < n {
+        // Look for &sql(
+        if i + 5 < n
+            && chars[i] == '&'
+            && chars[i + 1] == 's'
+            && chars[i + 2] == 'q'
+            && chars[i + 3] == 'l'
+            && chars[i + 4] == '('
+        {
+            found = true;
+            rs_counter += 1;
+            let rs_var = format!("sqlrs{}", rs_counter);
+            let sc_var = format!("sqlsc{}", rs_counter);
+            let sqlcode_var = format!("sqlSQLCODE{}", rs_counter);
+
+            // Find matching closing paren using depth counting
+            let start = i + 5; // after &sql(
+            let mut depth = 1usize;
+            let mut j = start;
+            while j < n && depth > 0 {
+                if chars[j] == '(' {
+                    depth += 1;
+                } else if chars[j] == ')' {
+                    depth -= 1;
+                }
+                if depth > 0 {
+                    j += 1;
+                }
+            }
+            let sql_content: String = chars[start..j].iter().collect();
+            i = j + 1; // skip past the closing )
+
+            // Classify statement type
+            let sql_upper = sql_content.trim().to_uppercase();
+            if sql_upper.starts_with("CALL") {
+                // Unsupported — leave unchanged with warning
+                warnings.push(format!(
+                    "&sql(CALL ...) at macro #{} was not translated — CALL statements with OUT parameters are not supported. Use ##class(...).Method() directly.",
+                    rs_counter
+                ));
+                output.push_str(&format!("&sql({})", sql_content));
+            } else if sql_upper.starts_with("SELECT") {
+                // Translate SELECT INTO
+                output.push_str(&translate_select_into(
+                    &sql_content,
+                    &rs_var,
+                    &sc_var,
+                    &sqlcode_var,
+                ));
+                // Check next line for SQLCODE / %msg and rewrite
+                i = rewrite_next_line_sqlcode(
+                    chars.as_slice(),
+                    i,
+                    n,
+                    &mut output,
+                    &sqlcode_var,
+                    &rs_var,
+                );
+                continue;
+            } else if sql_upper.starts_with("INSERT")
+                || sql_upper.starts_with("UPDATE")
+                || sql_upper.starts_with("DELETE")
+                || sql_upper.starts_with("MERGE")
+            {
+                // Translate DML
+                output.push_str(&translate_dml(&sql_content, &rs_var));
+                // Check next line for SQLCODE / %msg
+                i = rewrite_next_line_sqlcode(
+                    chars.as_slice(),
+                    i,
+                    n,
+                    &mut output,
+                    &sqlcode_var,
+                    &rs_var,
+                );
+                continue;
+            } else {
+                // Unknown — leave unchanged with warning
+                warnings.push(format!(
+                    "&sql({}) at macro #{} was not translated — unrecognized SQL statement type.",
+                    &sql_content[..sql_content.len().min(50)],
+                    rs_counter
+                ));
+                output.push_str(&format!("&sql({})", sql_content));
+            }
+        } else {
+            output.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    TranslationResult {
+        translated_code: output,
+        found,
+        warnings,
+    }
+}
+
+/// Translate a SELECT ... INTO :var1, :var2 ... statement.
+fn translate_select_into(sql: &str, rs_var: &str, sc_var: &str, sqlcode_var: &str) -> String {
+    // Parse: split on INTO to separate column list and host variables + WHERE clause
+
+    // Find INTO keyword (not inside parens)
+    let into_pos = find_keyword_pos(sql, "INTO");
+
+    let (select_cols_sql, rest_after_into) = if let Some(pos) = into_pos {
+        let before = sql[..pos].trim().to_string();
+        let after = &sql[pos + 4..]; // skip "INTO"
+        (before, after.trim().to_string())
+    } else {
+        // SELECT without INTO — translate as result-set loop but no vars to set
+        return translate_select_no_into(sql, rs_var, sc_var, sqlcode_var);
+    };
+
+    // Extract SELECT column names (between SELECT and INTO)
+    // select_cols_sql is like "SELECT Name, Age"
+    let col_list_str = if let Some(idx) = select_cols_sql.to_uppercase().find("SELECT") {
+        select_cols_sql[idx + 6..].trim().to_string()
+    } else {
+        select_cols_sql.clone()
+    };
+    let col_names: Vec<String> = split_csv(&col_list_str)
+        .iter()
+        .map(|c| {
+            // Handle "ColName AS alias" → use alias
+            let upper = c.to_uppercase();
+            if let Some(as_pos) = upper.find(" AS ") {
+                c[as_pos + 4..].trim().to_string()
+            } else {
+                // Strip table qualifier: "t.Name" → "Name"
+                c.trim()
+                    .split('.')
+                    .next_back()
+                    .unwrap_or(c.trim())
+                    .to_string()
+            }
+        })
+        .collect();
+
+    // rest_after_into is like ":name, :age FROM table WHERE ..."
+    // Split host vars from FROM clause
+    let (host_vars_str, from_clause) = split_host_vars_from_rest(&rest_after_into);
+    let host_vars: Vec<String> = split_csv(&host_vars_str)
+        .iter()
+        .map(|v| v.trim().trim_start_matches(':').to_string())
+        .collect();
+
+    // Extract WHERE parameters (collect :varname in FROM+WHERE but not the host vars)
+    let where_params = extract_where_params(&from_clause);
+
+    // Build the SQL for %Prepare — SELECT cols FROM ... (without INTO clause)
+    let prepared_sql = format!("SELECT {} {}", col_list_str, from_clause);
+    // Replace :varname in WHERE with ?
+    let prepared_sql = replace_host_vars_with_positional(&prepared_sql, &where_params);
+
+    // Build the generated ObjectScript
+    let mut out = String::new();
+    out.push_str(&format!(
+        "set {} = ##class(%SQL.Statement).%New()\n",
+        rs_var
+    ));
+    out.push_str(&format!(
+        "set {} = {}.%Prepare(\"{}\")\n",
+        sc_var,
+        rs_var,
+        prepared_sql.replace('"', "\"\"")
+    ));
+    // Execute with WHERE params
+    let exec_args = if where_params.is_empty() {
+        String::new()
+    } else {
+        format!(", {}", where_params.join(", "))
+    };
+    out.push_str(&format!(
+        "set {} = {}.%Execute({}{})\n",
+        rs_var,
+        rs_var,
+        "",
+        exec_args.trim_start_matches(", ")
+    ));
+    // Fetch row — use single-line if/else for compatibility with execute_via_generator
+    out.push_str(&format!("if {}.%Next() {{", rs_var));
+    for (idx, var) in host_vars.iter().enumerate() {
+        let col = col_names
+            .get(idx)
+            .map(String::as_str)
+            .unwrap_or(var.as_str());
+        out.push_str(&format!(" set {} = {}.%Get(\"{}\")", var, rs_var, col));
+    }
+    out.push_str(" } else {");
+    for var in &host_vars {
+        out.push_str(&format!(" set {} = \"\"", var));
+    }
+    out.push_str(&format!(" set {} = {}.%SQLCODE", sqlcode_var, rs_var));
+    out.push_str(" }");
+
+    out
+}
+
+fn translate_select_no_into(sql: &str, rs_var: &str, sc_var: &str, _sqlcode_var: &str) -> String {
+    // SELECT without INTO — translate to prepare/execute but no host var assignment
+    let where_params = extract_where_params(sql);
+    let prepared_sql = replace_host_vars_with_positional(sql, &where_params);
+    let mut out = String::new();
+    out.push_str(&format!(
+        "set {} = ##class(%SQL.Statement).%New()\n",
+        rs_var
+    ));
+    out.push_str(&format!(
+        "set {} = {}.%Prepare(\"{}\")\n",
+        sc_var,
+        rs_var,
+        prepared_sql.replace('"', "\"\"")
+    ));
+    let exec_args = where_params.join(", ");
+    out.push_str(&format!(
+        "set {} = {}.%Execute({})\n",
+        rs_var, rs_var, exec_args
+    ));
+    out
+}
+
+fn translate_dml(sql: &str, rs_var: &str) -> String {
+    let params = extract_where_params(sql);
+    let prepared_sql = replace_host_vars_with_positional(sql, &params);
+    let exec_args = if params.is_empty() {
+        String::new()
+    } else {
+        format!(", {}", params.join(", "))
+    };
+    format!(
+        "set {} = ##class(%SQL.Statement).%ExecDirect(, \"{}\"{})",
+        rs_var,
+        prepared_sql.replace('"', "\"\""),
+        exec_args
+    )
+}
+
+/// After a translated &sql, check if the immediately following line contains
+/// a standalone SQLCODE or %msg reference and rewrite it.
+/// Returns the new position in chars after consuming any rewritten line.
+fn rewrite_next_line_sqlcode(
+    chars: &[char],
+    mut i: usize,
+    n: usize,
+    output: &mut String,
+    sqlcode_var: &str,
+    rs_var: &str,
+) -> usize {
+    // Skip whitespace (but not newlines) to find the next line
+    // First, collect the rest of the current line (should be empty or whitespace after &sql)
+    while i < n && chars[i] != '\n' {
+        output.push(chars[i]);
+        i += 1;
+    }
+    if i < n && chars[i] == '\n' {
+        output.push('\n');
+        i += 1;
+    }
+
+    // Collect the next line
+    let mut next_line = String::new();
+    let line_start = i;
+    while i < n && chars[i] != '\n' {
+        next_line.push(chars[i]);
+        i += 1;
+    }
+
+    if next_line.trim().is_empty() {
+        // Empty line — output and continue
+        output.push_str(&next_line);
+        return i;
+    }
+
+    if next_line.trim().starts_with("&sql(") {
+        // Another &sql macro — don't consume this line; let the main loop re-process it
+        // Back up i to the start of this line
+        return line_start;
+    }
+
+    // Rewrite SQLCODE → sqlcode_var and %msg → rs_var.%Message on this specific line
+    let rewritten = next_line
+        .replace("SQLCODE", sqlcode_var)
+        .replace("%msg", &format!("{}.%Message", rs_var));
+
+    output.push_str(&rewritten);
+    i
+}
+
+/// Find the position of a keyword in SQL (case-insensitive), not inside parens.
+fn find_keyword_pos(sql: &str, keyword: &str) -> Option<usize> {
+    let upper = sql.to_uppercase();
+    let kw_upper = keyword.to_uppercase();
+    let mut depth = 0usize;
+    let bytes = upper.as_bytes();
+    let kw_bytes = kw_upper.as_bytes();
+    let mut i = 0;
+    while i + kw_bytes.len() <= bytes.len() {
+        if bytes[i] == b'(' {
+            depth += 1;
+        } else if bytes[i] == b')' && depth > 0 {
+            depth -= 1;
+        } else if depth == 0 && bytes[i..].starts_with(kw_bytes) {
+            // Word boundary check
+            let before_ok = i == 0 || !bytes[i - 1].is_ascii_alphabetic();
+            let after_ok = i + kw_bytes.len() >= bytes.len()
+                || !bytes[i + kw_bytes.len()].is_ascii_alphabetic();
+            if before_ok && after_ok {
+                return Some(i);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Split a comma-separated list, respecting parens.
+fn split_csv(s: &str) -> Vec<String> {
+    let mut result = vec![];
+    let mut current = String::new();
+    let mut depth = 0usize;
+    for c in s.chars() {
+        match c {
+            '(' => {
+                depth += 1;
+                current.push(c);
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+                current.push(c);
+            }
+            ',' if depth == 0 => {
+                let trimmed = current.trim().to_string();
+                if !trimmed.is_empty() {
+                    result.push(trimmed);
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        result.push(trimmed);
+    }
+    result
+}
+
+/// Split host variables (:var1, :var2) from the rest of the SQL after INTO.
+/// Returns (host_vars_str, from_and_where_clause).
+fn split_host_vars_from_rest(after_into: &str) -> (String, String) {
+    // after_into looks like ":name, :age FROM table WHERE ..."
+    // Find "FROM" keyword
+    let upper = after_into.to_uppercase();
+    if let Some(from_pos) = find_keyword_pos(after_into, "FROM") {
+        let vars = after_into[..from_pos].trim().to_string();
+        let rest = after_into[from_pos..].trim().to_string();
+        (vars, rest)
+    } else if let Some(pos) = upper.find("FROM") {
+        (
+            after_into[..pos].trim().to_string(),
+            after_into[pos..].trim().to_string(),
+        )
+    } else {
+        (after_into.to_string(), String::new())
+    }
+}
+
+/// Extract :varname host variables from WHERE/VALUES clause in order, returning bare names.
+fn extract_where_params(sql: &str) -> Vec<String> {
+    let mut params = vec![];
+    let chars: Vec<char> = sql.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut string_char = ' ';
+    while i < n {
+        let c = chars[i];
+        if in_string {
+            if c == string_char {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '\'' || c == '"' {
+            in_string = true;
+            string_char = c;
+            i += 1;
+            continue;
+        }
+        if c == ':' && i + 1 < n && chars[i + 1].is_alphabetic() {
+            i += 1;
+            let mut name = String::new();
+            while i < n && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                name.push(chars[i]);
+                i += 1;
+            }
+            if !params.contains(&name) {
+                params.push(name);
+            }
+            continue;
+        }
+        i += 1;
+    }
+    params
+}
+
+/// Replace :varname with ? in SQL string, tracking order.
+fn replace_host_vars_with_positional(sql: &str, params: &[String]) -> String {
+    let mut result = sql.to_string();
+    for param in params {
+        result = result.replace(&format!(":{}", param), "?");
+    }
+    result
+}
+
 /// A single tool call entry for the session history ring buffer.
 #[derive(Debug, Clone)]
 pub struct ToolCallEntry {
@@ -299,6 +752,13 @@ pub struct ExecuteParams {
     pub timeout: u64,
     #[serde(default)]
     pub confirmed: bool,
+    /// If true (default), rewrite &sql(...) embedded SQL macros to %SQL.Statement calls before executing.
+    /// Set to false to send code as-is for debugging.
+    #[serde(default = "default_translate_sql")]
+    pub translate_sql: bool,
+}
+fn default_translate_sql() -> bool {
+    true
 }
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct QueryParams {
@@ -1932,21 +2392,34 @@ impl IrisTools {
     }
 
     #[tool(
-        description = "Execute arbitrary ObjectScript code on IRIS and return stdout. Uses pure-HTTP execution via CodeMode=objectgenerator (write temp class, compile, query result, delete). Falls back to docker exec if IRIS_CONTAINER env var is set and HTTP fails. Example: code='write $ZVERSION,!' returns the IRIS version string. Note: &sql embedded SQL macro is not supported — use %SQL.Statement class methods or iris_query instead."
+        description = "Execute arbitrary ObjectScript code on IRIS and return stdout. Uses pure-HTTP execution via CodeMode=objectgenerator (write temp class, compile, query result, delete). Falls back to docker exec if IRIS_CONTAINER env var is set and HTTP fails. &sql(...) embedded SQL macros are automatically translated to %SQL.Statement calls (set translate_sql: false to disable). When translation fires, response includes sql_translated: true and translated_code. Example: code='write $ZVERSION,!' returns the IRIS version string."
     )]
     async fn iris_execute(
         &self,
         Parameters(p): Parameters<ExecuteParams>,
     ) -> Result<CallToolResult, McpError> {
         let iris = self.get_iris_reloaded().await?;
-        tracing::info!(namespace = %p.namespace, "iris_execute");
+        tracing::info!(namespace = %p.namespace, translate_sql = p.translate_sql, "iris_execute");
         let client = self.http_client();
         let timeout = std::time::Duration::from_secs(p.timeout);
+
+        // &sql macro translation — rewrite before sending to IRIS (035)
+        let translation = if p.translate_sql {
+            let r = translate_sql_macros(&p.code);
+            Some(r)
+        } else {
+            None
+        };
+        let code_to_run = translation
+            .as_ref()
+            .filter(|r| r.found)
+            .map(|r| r.translated_code.as_str())
+            .unwrap_or(&p.code);
 
         // Try pure-HTTP execution first (write-compile-query via CodeMode=objectgenerator).
         let gen_result = tokio::time::timeout(
             timeout,
-            iris.execute_via_generator(&p.code, &p.namespace, client),
+            iris.execute_via_generator(code_to_run, &p.namespace, client),
         )
         .await;
 
@@ -1961,12 +2434,28 @@ impl IrisTools {
             }
             Ok(Ok(output)) => {
                 self.record_call("iris_execute", true);
-                return ok_json(serde_json::json!({
+                let mut resp = serde_json::json!({
                     "success": true,
                     "output": output.trim(),
                     "namespace": p.namespace,
                     "method": "http",
-                }));
+                });
+                if let Some(ref tr) = translation {
+                    if tr.found {
+                        resp["sql_translated"] = serde_json::Value::Bool(true);
+                        resp["translated_code"] =
+                            serde_json::Value::String(tr.translated_code.clone());
+                        if !tr.warnings.is_empty() {
+                            resp["translation_warning"] = serde_json::Value::Array(
+                                tr.warnings
+                                    .iter()
+                                    .map(|w| serde_json::Value::String(w.clone()))
+                                    .collect(),
+                            );
+                        }
+                    }
+                }
+                return ok_json(resp);
             }
             Ok(Err(_)) => {
                 // HTTP path failed — fall through to docker exec.
@@ -1975,7 +2464,7 @@ impl IrisTools {
 
         // Fallback: docker exec (requires IRIS_CONTAINER env var).
         let docker_result =
-            tokio::time::timeout(timeout, iris.execute(&p.code, &p.namespace)).await;
+            tokio::time::timeout(timeout, iris.execute(code_to_run, &p.namespace)).await;
         match docker_result {
             Err(_) => {
                 self.record_call("iris_execute", false);
@@ -2004,12 +2493,28 @@ impl IrisTools {
             }
             Ok(Ok(output)) => {
                 self.record_call("iris_execute", true);
-                ok_json(serde_json::json!({
+                let mut resp = serde_json::json!({
                     "success": true,
                     "output": output.trim(),
                     "namespace": p.namespace,
                     "method": "docker",
-                }))
+                });
+                if let Some(ref tr) = translation {
+                    if tr.found {
+                        resp["sql_translated"] = serde_json::Value::Bool(true);
+                        resp["translated_code"] =
+                            serde_json::Value::String(tr.translated_code.clone());
+                        if !tr.warnings.is_empty() {
+                            resp["translation_warning"] = serde_json::Value::Array(
+                                tr.warnings
+                                    .iter()
+                                    .map(|w| serde_json::Value::String(w.clone()))
+                                    .collect(),
+                            );
+                        }
+                    }
+                }
+                ok_json(resp)
             }
         }
     }
