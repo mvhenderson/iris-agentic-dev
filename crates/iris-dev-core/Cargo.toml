@@ -178,3 +178,11 @@ path = "tests/unit/test_iris_test_http.rs"
 [[test]]
 name = "test_iris_test_e2e"
 path = "tests/integration/test_iris_test_e2e.rs"
+
+[[test]]
+name = "test_sql_safety"
+path = "tests/unit/test_sql_safety.rs"
+
+[[test]]
+name = "test_sql_safety_e2e"
+path = "tests/integration/test_sql_safety_e2e.rs"
