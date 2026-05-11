@@ -3288,3 +3288,66 @@ fn e2e_search_result_has_document_and_context() {
         serde_json::json!({"mode":"delete","name":name,"namespace":"USER"}),
     );
 }
+
+// ── #43: License slot reuse via cookie_store ──────────────────────────────────
+
+/// Verify that multiple iris_execute calls in a session reuse CSP connections
+/// rather than creating new license slots for each call.
+/// Checks that MaxConnections does not grow proportionally with call count.
+#[test]
+fn license_slots_reused_across_calls() {
+    require_iris!();
+    let env = iris_env();
+
+    // Query license slot usage before burst
+    let pre = call_tool_timeout(
+        "iris_query",
+        serde_json::json!({
+            "query": "SELECT MaxConnections FROM %SYSTEM.License_CountsGet()",
+            "namespace": "USER"
+        }),
+        10,
+    );
+    let pre_max = pre["rows"]
+        .as_array()
+        .and_then(|r| r.first())
+        .and_then(|row| row["MaxConnections"].as_u64())
+        .unwrap_or(0);
+    eprintln!("Pre-burst MaxConnections: {}", pre_max);
+
+    // Fire 10 iris_execute calls back-to-back (same client, should reuse sessions)
+    let mut msgs = init_msgs();
+    for i in 0..10 {
+        msgs.push(serde_json::json!({
+            "jsonrpc":"2.0","id":(i+2),"method":"tools/call",
+            "params":{"name":"iris_execute","arguments":{"code":"write $ZVERSION,!","namespace":"USER"}}
+        }));
+    }
+    let responses = mcp_call(&env, &msgs);
+    assert_eq!(responses.len(), 11, "should have init + 10 tool responses");
+
+    // Query license slots after burst
+    let post = call_tool_timeout(
+        "iris_query",
+        serde_json::json!({
+            "query": "SELECT MaxConnections FROM %SYSTEM.License_CountsGet()",
+            "namespace": "USER"
+        }),
+        10,
+    );
+    let post_max = post["rows"]
+        .as_array()
+        .and_then(|r| r.first())
+        .and_then(|row| row["MaxConnections"].as_u64())
+        .unwrap_or(0);
+    eprintln!("Post-burst MaxConnections: {}", post_max);
+
+    // With cookie reuse, 10 calls should NOT create 10+ new license slots.
+    // Allow a small delta (≤3) for existing ambient connections.
+    let delta = post_max.saturating_sub(pre_max);
+    assert!(
+        delta <= 3,
+        "MaxConnections grew by {} after 10 iris_execute calls — cookie session reuse not working (expected ≤3 new slots)",
+        delta
+    );
+}

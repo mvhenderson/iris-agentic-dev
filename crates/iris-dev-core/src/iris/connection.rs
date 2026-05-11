@@ -472,6 +472,7 @@ impl IrisConnection {
         Ok(reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .danger_accept_invalid_certs(insecure)
+            .cookie_store(true) // reuse CSP sessions to avoid license slot exhaustion (#43)
             .build()?)
     }
 
