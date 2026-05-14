@@ -33,6 +33,11 @@
     "configuration": {
       "title": "iris-dev",
       "properties": {
+        "iris-dev.containerName": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the Docker container running the IRIS instance. Used to provide the IRIS_CONTAINER environment variable to the iris-dev server process, which allows it to use tools which require direct access."
+        },
         "iris-dev.serverPath": {
           "type": "string",
           "default": "",

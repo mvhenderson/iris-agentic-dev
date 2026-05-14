@@ -52,6 +52,7 @@ export class IrisDevMcpProvider
     this.watcher = vscode.workspace.onDidChangeConfiguration(e => {
       if (
         e.affectsConfiguration('objectscript.conn') ||
+        e.affectsConfiguration('iris-dev.containerName') ||
         e.affectsConfiguration('iris-dev.nativePort') ||
         e.affectsConfiguration('iris-dev.serverPath') ||
         e.affectsConfiguration('intersystems.servers')
@@ -102,6 +103,10 @@ export class IrisDevMcpProvider
       );
       return [];
     }
+    const containerName = vscode.workspace
+      .getConfiguration('iris-dev')
+      .get<string>('containerName');
+    this.log.info(`iris-dev: containerName = ${containerName}`);
 
     // Resolve named server if using intersystems.servers.
     // Server Manager writes server definitions to user settings, so we must
@@ -161,6 +166,7 @@ export class IrisDevMcpProvider
       IRIS_NAMESPACE: named?.ns ?? namespace,
       IRIS_ISFS: isIsfs ? 'true' : undefined,
       IRIS_SERVER_NAME: conn.server ?? undefined,
+      IRIS_CONTAINER: containerName ?? undefined,
       OBJECTSCRIPT_LEARNING: 'true',
     };
     const env: Record<string, string | number> = Object.fromEntries(
