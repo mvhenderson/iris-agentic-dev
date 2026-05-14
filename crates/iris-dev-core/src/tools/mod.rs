@@ -2120,7 +2120,10 @@ impl IrisTools {
         //   "      TestFoo passed"          ← method result (no parens, no timing)
         //   "      TestFoo FAILED -- <msg>" ← method failure
         //   "    ClassName passed"
-        tracing::warn!(output = %run_output.trim(), "iris_test raw RunTest output (tmp diagnostic)");
+        eprintln!(
+            "[iris_test diagnostic] raw RunTest output:\n{}",
+            run_output.trim()
+        );
         for line in run_output.lines() {
             let trimmed = line.trim();
             // Class begin: "IrisDevE2E.SmokeTest begins ..."  (contains dot, no parens)
