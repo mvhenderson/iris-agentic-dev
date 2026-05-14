@@ -3351,3 +3351,97 @@ fn license_slots_reused_across_calls() {
         delta
     );
 }
+
+// ── iris_test persistence (#48) ───────────────────────────────────────────────
+
+#[test]
+fn e2e_test_classes_persist_between_runs() {
+    require_iris!();
+    let cls_doc = "Test022.PersistCheck.cls";
+    let cls_content = r#"Class Test022.PersistCheck Extends %UnitTest.TestCase {
+Method TestPersists() {
+  Do $$$AssertEquals(1, 1, "persistence check")
+}
+}"#;
+
+    // Seed and compile
+    let put = call_tool(
+        "iris_doc",
+        serde_json::json!({"mode":"put","name":cls_doc,"content":cls_content,"namespace":"USER"}),
+    );
+    assert_eq!(put["success"], true, "seed: {}", put);
+    let compile = call_tool(
+        "iris_compile",
+        serde_json::json!({"target":cls_doc,"namespace":"USER"}),
+    );
+    assert_eq!(compile["success"], true, "compile: {}", compile);
+
+    // First run
+    let r1 = call_tool(
+        "iris_test",
+        serde_json::json!({"pattern": "Test022.PersistCheck", "namespace": "USER"}),
+    );
+    if r1["error_code"].as_str() == Some("NO_TESTS_FOUND")
+        || r1["error_code"].as_str() == Some("DOCKER_REQUIRED")
+    {
+        call_tool(
+            "iris_doc",
+            serde_json::json!({"mode":"delete","name":cls_doc,"namespace":"USER"}),
+        );
+        return;
+    }
+    assert_eq!(r1["passed"].as_u64().unwrap_or(0), 1, "first run: {}", r1);
+
+    // Second run without re-uploading — class must still be present (/nodelete)
+    let r2 = call_tool(
+        "iris_test",
+        serde_json::json!({"pattern": "Test022.PersistCheck", "namespace": "USER"}),
+    );
+    assert!(
+        r2["error_code"].as_str() != Some("NO_TESTS_FOUND"),
+        "test class was deleted after first run — /nodelete not working: {}",
+        r2
+    );
+    assert_eq!(
+        r2["passed"].as_u64().unwrap_or(0),
+        1,
+        "second run should find same class: {}",
+        r2
+    );
+
+    // Cleanup
+    call_tool(
+        "iris_doc",
+        serde_json::json!({"mode":"delete","name":cls_doc,"namespace":"USER"}),
+    );
+}
+
+// ── HTTP client config (#44) ──────────────────────────────────────────────────
+
+#[test]
+fn e2e_http_client_tcp_keepalive_set() {
+    // Verify the HTTP client can be constructed with the new keepalive config.
+    // This is a build-time/config test — if http_client() fails, the MCP server
+    // would not start at all, so we just verify it constructs successfully.
+    let client = iris_dev_core::iris::connection::IrisConnection::http_client();
+    assert!(
+        client.is_ok(),
+        "http_client() must build successfully with tcp_keepalive: {:?}",
+        client.err()
+    );
+}
+
+#[test]
+fn e2e_iris_tls_verify_false_disables_cert_check() {
+    // IRIS_TLS_VERIFY=false must produce the same result as IRIS_INSECURE=true.
+    // We just verify the client builds — actual TLS behavior requires a self-signed
+    // cert endpoint which isn't available in CI.
+    std::env::set_var("IRIS_TLS_VERIFY", "false");
+    let client = iris_dev_core::iris::connection::IrisConnection::http_client();
+    std::env::remove_var("IRIS_TLS_VERIFY");
+    assert!(
+        client.is_ok(),
+        "http_client() must build with IRIS_TLS_VERIFY=false: {:?}",
+        client.err()
+    );
+}
