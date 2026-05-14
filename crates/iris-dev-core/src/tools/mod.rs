@@ -2066,7 +2066,7 @@ impl IrisTools {
         // the objectgenerator transaction boundary; SQL %Save() does not).
         // We write the run index out and return it to identify the run in the next step.
         let run_code = format!(
-            r#"do ##class(%UnitTest.Manager).RunTest("{pattern}","/verbose=1/nodelete","{token}")"#,
+            r#"do ##class(%UnitTest.Manager).RunTest("{pattern}","/noload/run/verbose=1/nodelete","{token}")"#,
             token = correlation_token,
             pattern = safe_pattern,
         );
@@ -2209,7 +2209,11 @@ impl IrisTools {
 
         let total = passed + failed + errors;
 
-        if total == 0 {
+        // IRIS creates a synthetic 1-failure suite when the pattern matches no test classes
+        // (e.g. "Test022\NonExistent\NoSuchClass FAILED" at the suite level). The method
+        // parser skips these (they contain path separators), so test_cases stays empty.
+        // Treat any run with no parsed method results as NO_TESTS_FOUND.
+        if total == 0 || test_cases.is_empty() {
             self.record_call("iris_test", false);
             return ok_json(serde_json::json!({
                 "success": false,
