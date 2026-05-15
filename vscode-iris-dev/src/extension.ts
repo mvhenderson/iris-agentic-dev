@@ -57,6 +57,7 @@ export class IrisDevMcpProvider
         e.affectsConfiguration('iris-dev.tlsVerify') ||
         e.affectsConfiguration('iris-dev.toolset') ||
         e.affectsConfiguration('iris-dev.namespace') ||
+        e.affectsConfiguration('iris-dev.scheme') ||
         e.affectsConfiguration('http.proxyStrictSSL') ||
         e.affectsConfiguration('intersystems.servers')
       ) {
@@ -117,6 +118,9 @@ export class IrisDevMcpProvider
     const namespaceOverride = vscode.workspace.getConfiguration('iris-dev').get<string>('namespace') || '';
     this.log.info(`iris-dev: namespaceOverride = ${namespaceOverride || '(none)'}`);
 
+    const schemeOverride = vscode.workspace.getConfiguration('iris-dev').get<string>('scheme') || '';
+    this.log.info(`iris-dev: schemeOverride = ${schemeOverride || '(none)'}`);
+
     // TLS verification: disabled if iris-dev.tlsVerify=false OR http.proxyStrictSSL=false.
     const tlsVerifySetting = vscode.workspace.getConfiguration('iris-dev').get<boolean>('tlsVerify', true);
     const proxyStrictSSL = vscode.workspace.getConfiguration('http').get<boolean>('proxyStrictSSL', true);
@@ -175,7 +179,7 @@ export class IrisDevMcpProvider
       IRIS_HOST: resolvedHost,
       IRIS_WEB_PORT: named?.webServer?.port ?? webPort,
       IRIS_WEB_PREFIX: webPrefix ?? undefined,
-      IRIS_SCHEME: webScheme ?? undefined,
+      IRIS_SCHEME: schemeOverride || webScheme || undefined,
       IRIS_USERNAME: named?.username ?? conn.username ?? undefined,
       IRIS_PASSWORD: named?.password ?? conn.password ?? undefined,
       IRIS_NAMESPACE: namespaceOverride || (named?.ns ?? namespace),
