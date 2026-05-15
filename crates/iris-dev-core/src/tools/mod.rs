@@ -2281,6 +2281,8 @@ impl IrisTools {
             "pattern": p.pattern,
             "namespace": p.namespace,
             "test_suites": test_suites,
+            "_diag_raw": run_output.trim(),
+            "_diag_cases": format!("{:?}", test_cases.iter().map(|c| c["name"].as_str().unwrap_or("?")).collect::<Vec<_>>()),
         }))
     }
 
