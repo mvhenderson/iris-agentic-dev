@@ -22,6 +22,11 @@ pub struct WorkspaceConfig {
     pub scheme: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
+    /// When true, skip HTTP/Atelier REST and use docker exec exclusively.
+    /// Use for containers without a web server (e.g. community IRIS with no web gateway).
+    /// Requires IRIS_CONTAINER to be set or container= in config.
+    #[serde(default)]
+    pub docker_only: bool,
 }
 
 /// Resolve the workspace root path.
@@ -154,14 +159,43 @@ pub fn workspace_config_to_connection(
     // container → inject into env so discover_iris() docker step picks it up
     if let Some(ref container) = cfg.container {
         std::env::set_var("IRIS_CONTAINER", container);
-        if let Some(ref ns) = cfg.namespace {
-            std::env::set_var("IRIS_NAMESPACE", ns);
+        let ns = cfg
+            .namespace
+            .clone()
+            .or_else(|| std::env::var("IRIS_NAMESPACE").ok())
+            .unwrap_or_else(|| namespace_default.to_string());
+        let username = cfg
+            .username
+            .clone()
+            .or_else(|| std::env::var("IRIS_USERNAME").ok())
+            .unwrap_or_else(|| "_SYSTEM".to_string());
+        let password = cfg
+            .password
+            .clone()
+            .or_else(|| std::env::var("IRIS_PASSWORD").ok())
+            .unwrap_or_else(|| "SYS".to_string());
+        if let Some(ref ns_val) = cfg.namespace {
+            std::env::set_var("IRIS_NAMESPACE", ns_val);
         }
         if let Some(ref user) = cfg.username {
             std::env::set_var("IRIS_USERNAME", user);
         }
         if let Some(ref pass) = cfg.password {
             std::env::set_var("IRIS_PASSWORD", pass);
+        }
+        if cfg.docker_only {
+            // docker_only=true: skip HTTP entirely, use docker exec for all operations.
+            // Return a connection with an unreachable URL — HTTP calls will fail fast,
+            // triggering the docker exec fallback in iris_execute/iris_compile etc.
+            return Some(IrisConnection::new(
+                "http://127.0.0.1:1",
+                ns,
+                username,
+                password,
+                DiscoverySource::Docker {
+                    container_name: container.clone(),
+                },
+            ));
         }
         return None; // discover_iris() will find the container via IRIS_CONTAINER
     }
