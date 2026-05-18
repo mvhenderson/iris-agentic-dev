@@ -378,6 +378,10 @@ impl IrisConnection {
             "  } Catch ex {".into(),
             "    Write \"ERROR: \",ex.DisplayString(),!".into(),
             "  }".into(),
+            // Surface non-exception errors (e.g. OPEN failure sets $ZERROR but doesn't throw).
+            // Only emit if nothing was written yet (out sentinel means empty output).
+            "  If ($ZError'=\"\") && ($ZError'=\",\") { Write \"ERROR($ZERROR): \",$ZError,! }"
+                .into(),
             "  Close tmpfile".into(),
             "  Use savedIO".into(),
             // Read the temp file contents using %File for reliability.

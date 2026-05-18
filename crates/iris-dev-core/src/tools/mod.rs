@@ -2333,13 +2333,20 @@ impl IrisTools {
                 }));
             }
             Ok(Ok(output)) => {
-                self.record_call("iris_execute", true);
+                let trimmed = output.trim();
+                // Catch ObjectScript runtime errors written by the Catch block or $ZERROR check.
+                let is_runtime_error =
+                    trimmed.starts_with("ERROR: ") || trimmed.starts_with("ERROR($ZERROR): ");
+                self.record_call("iris_execute", !is_runtime_error);
                 let mut resp = serde_json::json!({
-                    "success": true,
-                    "output": output.trim(),
+                    "success": !is_runtime_error,
+                    "output": trimmed,
                     "namespace": p.namespace,
                     "method": "http",
                 });
+                if is_runtime_error {
+                    resp["error_code"] = serde_json::Value::String("IRIS_RUNTIME_ERROR".into());
+                }
                 if let Some(ref tr) = translation {
                     if tr.found {
                         resp["sql_translated"] = serde_json::Value::Bool(true);
@@ -2392,13 +2399,19 @@ impl IrisTools {
                 }
             }
             Ok(Ok(output)) => {
-                self.record_call("iris_execute", true);
+                let trimmed = output.trim();
+                let is_runtime_error =
+                    trimmed.starts_with("ERROR: ") || trimmed.starts_with("ERROR($ZERROR): ");
+                self.record_call("iris_execute", !is_runtime_error);
                 let mut resp = serde_json::json!({
-                    "success": true,
-                    "output": output.trim(),
+                    "success": !is_runtime_error,
+                    "output": trimmed,
                     "namespace": p.namespace,
                     "method": "docker",
                 });
+                if is_runtime_error {
+                    resp["error_code"] = serde_json::Value::String("IRIS_RUNTIME_ERROR".into());
+                }
                 if let Some(ref tr) = translation {
                     if tr.found {
                         resp["sql_translated"] = serde_json::Value::Bool(true);
