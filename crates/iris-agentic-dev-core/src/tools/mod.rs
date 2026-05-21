@@ -4378,6 +4378,112 @@ impl ServerHandler for IrisTools {
                     .to_string(),
             )
     }
+
+    /// Override list_tools to rewrite JSON Schema 2020-12 nullable types to OpenAPI 3.0 anyOf.
+    /// schemars + rmcp emit `"type": ["T", "null"]` which Google Vertex AI and Azure OpenAI
+    /// reject. Rewrite to `"anyOf": [{"type": "T", ...siblings}, {"type": "null"}]`.
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+        let mut tools = self.tool_router.list_all();
+        for tool in tools.iter_mut() {
+            let schema = std::sync::Arc::make_mut(&mut tool.input_schema);
+            normalize_schema_openapi3(schema);
+        }
+        Ok(rmcp::model::ListToolsResult {
+            tools,
+            next_cursor: None,
+            meta: None,
+        })
+    }
+}
+
+/// Recursively rewrite JSON Schema 2020-12 nullable arrays to OpenAPI 3.0 anyOf.
+///
+/// schemars + rmcp emit `"type": ["integer", "null"]` (JSON Schema 2020-12) which
+/// Google Vertex AI and Azure OpenAI reject. Rewrites to OpenAPI 3.0:
+/// `"anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]`.
+fn normalize_schema_openapi3(schema: &mut serde_json::Map<String, serde_json::Value>) {
+    // Recurse into container schemas first (anyOf, allOf, oneOf, items)
+    for key in ["anyOf", "allOf", "oneOf"] {
+        if let Some(arr) = schema.get_mut(key).and_then(|v| v.as_array_mut()) {
+            for item in arr.iter_mut() {
+                if let serde_json::Value::Object(obj) = item {
+                    normalize_schema_openapi3(obj);
+                }
+            }
+        }
+    }
+    if let Some(serde_json::Value::Object(obj)) = schema.get_mut("items") {
+        normalize_schema_openapi3(obj);
+    }
+
+    // Recurse into properties: extract, fix, re-insert to avoid borrow conflicts
+    if let Some(serde_json::Value::Object(mut props)) = schema.remove("properties") {
+        let keys: Vec<String> = props.keys().cloned().collect();
+        for k in keys {
+            if let Some(serde_json::Value::Object(prop)) = props.get_mut(&k) {
+                normalize_schema_openapi3(prop);
+            }
+        }
+        schema.insert("properties".to_string(), serde_json::Value::Object(props));
+    }
+
+    // Now transform this level if it has a nullable type array
+    let type_array = match schema.get("type") {
+        Some(serde_json::Value::Array(arr)) if arr.iter().any(|v| v == "null") => arr.clone(),
+        _ => return,
+    };
+
+    let non_null_types: Vec<serde_json::Value> = type_array
+        .iter()
+        .filter(|v| *v != "null")
+        .cloned()
+        .collect();
+    schema.remove("type");
+
+    // Move type-specific sibling fields into the non-null branch
+    let type_specific = [
+        "format",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "enum",
+        "const",
+        "items",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+        "properties",
+        "required",
+        "additionalProperties",
+    ];
+    let mut type_branch: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    for key in &type_specific {
+        if let Some(val) = schema.remove(*key) {
+            type_branch.insert(key.to_string(), val);
+        }
+    }
+    let non_null_type = if non_null_types.len() == 1 {
+        non_null_types.into_iter().next().unwrap()
+    } else {
+        serde_json::Value::Array(non_null_types)
+    };
+    type_branch.insert("type".to_string(), non_null_type);
+
+    schema.insert(
+        "anyOf".to_string(),
+        serde_json::Value::Array(vec![
+            serde_json::Value::Object(type_branch),
+            serde_json::json!({"type": "null"}),
+        ]),
+    );
 }
 
 fn parse_iris_error_string(s: &str) -> Option<(String, i64)> {
@@ -4616,5 +4722,92 @@ mod config_watcher_tests {
             !watcher.has_changed(),
             "no spurious change for existing file"
         );
+    }
+}
+
+#[cfg(test)]
+mod schema_normalization_tests {
+    use super::normalize_schema_openapi3;
+
+    #[test]
+    fn test_normalize_nullable_integer() {
+        let mut schema = serde_json::json!({
+            "type": ["integer", "null"],
+            "format": "uint",
+            "minimum": 0,
+            "description": "Max entries"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        normalize_schema_openapi3(&mut schema);
+        assert!(schema.get("type").is_none(), "type should be removed");
+        let any_of = schema["anyOf"].as_array().unwrap();
+        assert_eq!(any_of.len(), 2);
+        assert_eq!(any_of[0]["type"], "integer");
+        assert_eq!(any_of[0]["format"], "uint");
+        assert_eq!(any_of[0]["minimum"], 0);
+        assert_eq!(any_of[1]["type"], "null");
+        assert_eq!(
+            schema["description"], "Max entries",
+            "description stays at top level"
+        );
+    }
+
+    #[test]
+    fn test_normalize_nullable_string() {
+        let mut schema = serde_json::json!({
+            "type": ["string", "null"],
+            "description": "Optional string"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        normalize_schema_openapi3(&mut schema);
+        let any_of = schema["anyOf"].as_array().unwrap();
+        assert_eq!(any_of[0]["type"], "string");
+        assert_eq!(any_of[1]["type"], "null");
+    }
+
+    #[test]
+    fn test_normalize_nested_properties() {
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": ["integer", "null"],
+                    "format": "uint",
+                    "minimum": 0,
+                    "description": "Max"
+                }
+            }
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        normalize_schema_openapi3(&mut schema);
+        assert_eq!(schema["type"], "object", "top-level type unchanged");
+        let limit = &schema["properties"]["limit"];
+        assert!(limit.get("type").is_none());
+        let any_of = limit["anyOf"].as_array().unwrap();
+        assert_eq!(any_of[0]["type"], "integer");
+        assert_eq!(any_of[0]["format"], "uint");
+        assert_eq!(any_of[1]["type"], "null");
+        assert_eq!(limit["description"], "Max");
+    }
+
+    #[test]
+    fn test_normalize_non_nullable_unchanged() {
+        let mut schema = serde_json::json!({
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let original = schema.clone();
+        normalize_schema_openapi3(&mut schema);
+        assert_eq!(schema, original, "non-nullable schema should be unchanged");
     }
 }
