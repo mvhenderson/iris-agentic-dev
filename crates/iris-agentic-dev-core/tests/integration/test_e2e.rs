@@ -27,10 +27,10 @@ fn iris_dev_bin() -> std::path::PathBuf {
     let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.pop(); // crates/iris-dev-core
     p.pop(); // crates/
-    p.push("target/debug/iris-dev");
+    p.push("target/debug/iris-agentic-dev");
     if !p.exists() {
         p.pop();
-        p.push("release/iris-dev");
+        p.push("release/iris-agentic-dev");
     }
     p
 }
@@ -3444,4 +3444,171 @@ fn e2e_iris_tls_verify_false_disables_cert_check() {
         "http_client() must build with IRIS_TLS_VERIFY=false: {:?}",
         client.err()
     );
+}
+
+// ── 037: Dynamic dispatch resolution tools ────────────────────────────────────
+
+/// resolve_dynamic_dispatch returns candidates for a known IRIS method.
+#[test]
+fn e2e_resolve_dynamic_dispatch_returns_candidates() {
+    require_iris!();
+    let result = call_tool(
+        "resolve_dynamic_dispatch",
+        serde_json::json!({"method_name": "Connect", "package_prefix": "EnsLib", "namespace": "USER"}),
+    );
+    // Accept NO_RESULTS if namespace has no EnsLib classes compiled
+    if result["error_code"].as_str() == Some("IRIS_UNREACHABLE")
+        || result["error_code"].as_str() == Some("TIMEOUT")
+    {
+        eprintln!("resolve_dynamic_dispatch: IRIS unavailable — skipping");
+        return;
+    }
+    assert_eq!(
+        result["success"], true,
+        "resolve_dynamic_dispatch must succeed: {}",
+        result
+    );
+    assert!(result["candidates"].is_array(), "candidates must be array");
+    let n = result["candidate_count"].as_u64().unwrap_or(0);
+    if n > 0 {
+        let first = &result["candidates"][0];
+        assert!(first["class"].is_string(), "candidate must have class");
+        assert!(
+            first["confidence"].is_number(),
+            "candidate must have confidence"
+        );
+        assert!(
+            first["confidence"].as_f64().unwrap_or(0.0) > 0.0,
+            "confidence must be > 0"
+        );
+    }
+    // Verify confidence matches formula
+    if n == 1 {
+        assert_eq!(result["confidence"], 0.90);
+    } else if n >= 2 && n <= 5 {
+        assert_eq!(result["confidence"], 0.75);
+    }
+}
+
+/// extract_message_map_routing: plain class (no MessageMap) returns has_message_map:false.
+#[test]
+fn e2e_extract_message_map_no_message_map_class() {
+    require_iris!();
+    // Find a class that exists in this namespace
+    let result = call_tool(
+        "extract_message_map_routing",
+        serde_json::json!({"class_name": "%ASQ.AST", "namespace": "USER"}),
+    );
+    if result["error_code"].as_str() == Some("IRIS_UNREACHABLE")
+        || result["error_code"].as_str() == Some("TIMEOUT")
+    {
+        eprintln!("extract_message_map_routing: IRIS unavailable — skipping");
+        return;
+    }
+    // Accept NOT_FOUND if the class isn't in this namespace — use any available class
+    if result["error_code"].as_str() == Some("NOT_FOUND") {
+        eprintln!(
+            "extract_message_map_routing: %ASQ.AST not in this namespace — test inconclusive"
+        );
+        return;
+    }
+    assert_eq!(
+        result["success"], true,
+        "must succeed for known class: {}",
+        result
+    );
+    assert_eq!(
+        result["has_message_map"], false,
+        "%ASQ.AST has no MessageMap: {}",
+        result
+    );
+    assert!(
+        result["routes"]
+            .as_array()
+            .map(|a| a.is_empty())
+            .unwrap_or(false),
+        "routes must be empty array: {}",
+        result
+    );
+}
+
+/// extract_message_map_routing: NOT_FOUND for nonexistent class.
+#[test]
+fn e2e_extract_message_map_not_found() {
+    require_iris!();
+    let result = call_tool(
+        "extract_message_map_routing",
+        serde_json::json!({"class_name": "DoesNot.Exist.Class", "namespace": "USER"}),
+    );
+    if result["error_code"].as_str() == Some("IRIS_UNREACHABLE") {
+        return;
+    }
+    assert_eq!(
+        result["success"], false,
+        "nonexistent class must fail: {}",
+        result
+    );
+    assert_eq!(result["error_code"], "NOT_FOUND");
+}
+
+/// find_subclass_implementations returns results for a known Ensemble base method.
+#[test]
+fn e2e_find_subclass_implementations_returns_results() {
+    require_iris!();
+    let result = call_tool(
+        "find_subclass_implementations",
+        serde_json::json!({
+            "method_name": "OnProcessInput",
+            "base_classes": ["Ens.BusinessProcess"],
+            "namespace": "USER"
+        }),
+    );
+    if result["error_code"].as_str() == Some("IRIS_UNREACHABLE")
+        || result["error_code"].as_str() == Some("TIMEOUT")
+    {
+        eprintln!("find_subclass_implementations: IRIS unavailable — skipping");
+        return;
+    }
+    assert_eq!(
+        result["success"], true,
+        "find_subclass must succeed: {}",
+        result
+    );
+    assert!(
+        result["implementations"].is_array(),
+        "implementations must be array"
+    );
+    // Accept 0 results if Ens.BusinessProcess has no compiled subclasses in this namespace
+    let n = result["implementation_count"].as_u64().unwrap_or(0);
+    if n > 0 {
+        let first = &result["implementations"][0];
+        assert!(first["class"].is_string(), "implementation must have class");
+        assert!(
+            first["confidence"].is_number(),
+            "implementation must have confidence"
+        );
+    }
+}
+
+/// find_subclass_implementations: empty base_classes returns error.
+#[test]
+fn e2e_find_subclass_implementations_empty_base_classes() {
+    require_iris!();
+    let result = call_tool(
+        "find_subclass_implementations",
+        serde_json::json!({
+            "method_name": "OnProcessInput",
+            "base_classes": [],
+            "namespace": "USER"
+        }),
+    );
+    if result["error_code"].as_str() == Some("IRIS_UNREACHABLE") {
+        return;
+    }
+    assert_eq!(
+        result["success"], false,
+        "empty base_classes must fail: {}",
+        result
+    );
+    assert_eq!(result["error_code"], "INVALID_PARAMS");
 }

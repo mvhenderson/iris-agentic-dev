@@ -6,7 +6,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 /// Wrapper for tools that accept free-form JSON parameters.
@@ -31,6 +31,7 @@ impl std::ops::Deref for AnyParams {
     }
 }
 pub mod admin;
+pub mod dict;
 pub mod doc;
 pub mod info;
 pub mod interop;
@@ -1346,6 +1347,8 @@ pub struct IrisTools {
     pub elicitation_store: Arc<ElicitationStore>,
     /// UUID-keyed in-memory log store for progressive disclosure (027).
     pub log_store: Arc<std::sync::Mutex<log_store::LogStore>>,
+    /// Session-scoped TTL cache for %Dictionary introspection results (037).
+    pub metadata_cache: Arc<dict::MetadataCache>,
     /// Active toolset — controls which tools are registered.
     pub toolset: Toolset,
     #[allow(dead_code)] // used by #[tool_router] macro-generated code
@@ -1378,6 +1381,7 @@ impl IrisTools {
             log_store: Arc::new(std::sync::Mutex::new(log_store::LogStore::new(
                 log_max, log_ttl,
             ))),
+            metadata_cache: Arc::new(std::sync::Mutex::new(HashMap::new())),
             toolset: Toolset::Baseline,
             tool_router: Self::tool_router(),
         })
@@ -1410,6 +1414,9 @@ impl IrisTools {
             "iris_info",
             "iris_macro",
             "iris_table_info",
+            "resolve_dynamic_dispatch",
+            "extract_message_map_routing",
+            "find_subclass_implementations",
             "debug_capture_packet",
             "debug_get_error_logs",
             "iris_generate",
@@ -1609,6 +1616,7 @@ impl IrisTools {
             log_store: Arc::new(std::sync::Mutex::new(log_store::LogStore::new(
                 log_max, log_ttl,
             ))),
+            metadata_cache: Arc::new(std::sync::Mutex::new(HashMap::new())),
             toolset,
             tool_router: router,
         })
@@ -3623,6 +3631,63 @@ Methods:
         let iris = self.get_iris_reloaded().await?;
         let result = info::handle_iris_table_info(&iris, self.http_client(), p).await;
         self.record_call("iris_table_info", result.is_ok());
+        result
+    }
+
+    #[tool(
+        description = "Resolve ObjectScript dynamic dispatch: find all compiled classes that implement a given method. Use when you see $classmethod(var, method) or ##class({variable}).Method() and need to know the possible targets. Returns candidates with confidence scores (fewer matches = higher confidence). Confidence: 1 match=0.90, 2-5=0.75, 6-20=0.55, >20=0.30. Results cached 60s per session."
+    )]
+    async fn resolve_dynamic_dispatch(
+        &self,
+        Parameters(p): Parameters<dict::ResolveDynamicDispatchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let iris = self.get_iris_reloaded().await?;
+        let result = dict::handle_resolve_dynamic_dispatch(
+            &iris,
+            self.http_client(),
+            p,
+            &self.metadata_cache,
+        )
+        .await;
+        self.record_call("resolve_dynamic_dispatch", result.is_ok());
+        result
+    }
+
+    #[tool(
+        description = "Extract Ensemble MessageMap routing table from a compiled BusinessProcess or Router class. Returns the MessageType → Method dispatch table with confidence 0.9 (compiled routing = near ground truth). Use to find CALLS edges that static analysis cannot see. Returns has_message_map:false for classes without a MessageMap. Results cached 60s per session."
+    )]
+    async fn extract_message_map_routing(
+        &self,
+        Parameters(p): Parameters<dict::ExtractMessageMapParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let iris = self.get_iris_reloaded().await?;
+        let result = dict::handle_extract_message_map_routing(
+            &iris,
+            self.http_client(),
+            p,
+            &self.metadata_cache,
+        )
+        .await;
+        self.record_call("extract_message_map_routing", result.is_ok());
+        result
+    }
+
+    #[tool(
+        description = "Find all concrete subclass implementations of a method in the full inheritance hierarchy. Given base class names and a method name, expands to all descendants at any depth and returns classes where the method is defined (Origin = parent, not inherited). Use to resolve polymorphic dispatch: adapter.Execute() → find all EnsLib.*.Adapter subclasses that implement Execute. Results cached 60s per session."
+    )]
+    async fn find_subclass_implementations(
+        &self,
+        Parameters(p): Parameters<dict::FindSubclassImplementationsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let iris = self.get_iris_reloaded().await?;
+        let result = dict::handle_find_subclass_implementations(
+            &iris,
+            self.http_client(),
+            p,
+            &self.metadata_cache,
+        )
+        .await;
+        self.record_call("find_subclass_implementations", result.is_ok());
         result
     }
 
