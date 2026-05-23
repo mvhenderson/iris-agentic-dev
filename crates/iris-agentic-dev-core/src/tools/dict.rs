@@ -172,22 +172,17 @@ fn build_message_map_code(cls: &str) -> String {
     ));
     lines.push(r#"If '$IsObject(xd) { Write "{"_q_"has_message_map"_q_":false,"_q_"routes"_q_":[]}", ! Quit }"#.into());
     lines.push("Do xd.Data.Rewind()".into());
-    lines.push("Set reader=##class(%XML.TextReader).%New()".into());
-    lines.push("Set sc=reader.ParseStream(xd.Data)".into());
-    lines.push(
-        r#"If $$$ISERR(sc) { Write "{"_q_"error"_q_":"_q_"parse_failed"_q_"}", ! Quit }"#.into(),
-    );
-    lines.push(r#"Set routes="[",sep="",msgType="",inMapItem=0"#.into());
-    lines.push("While reader.Read() {".into());
-    lines.push(r#"  If reader.NodeType="element" {"#.into());
-    lines.push(r#"    If reader.Name="MapItem" { Set msgType=reader.GetAttributeValue("MessageType"),inMapItem=1 }"#.into());
-    lines.push(r#"    ElseIf (reader.Name="Method")&&inMapItem { Do reader.Read()"#.into());
-    lines.push(r#"      If reader.NodeType="chars" {"#.into());
-    lines.push(r#"        Set routes=routes_sep_"{"_q_"message_type"_q_":"_q_msgType_q_","_q_"method"_q_":"_q_reader.Value_q_","_q_"confidence"_q_":0.9}""#.into());
-    lines.push(r#"        Set sep=",""#.into());
-    lines.push("      }".into());
-    lines.push("    }".into());
-    lines.push(r#"  } ElseIf (reader.NodeType="endelement")&&(reader.Name="MapItem") { Set inMapItem=0,msgType="" }"#.into());
+    lines.push("Set xml=xd.Data.Read(32000)".into());
+    lines.push(r#"Set routes="[",sep="",pos=0"#.into());
+    lines.push("For {".into());
+    lines.push(r#"  Set msgStart=$FIND(xml,"MessageType=",pos+1)  Quit:'msgStart"#.into());
+    lines.push(r#"  Set qStart=$FIND(xml,q,msgStart)  Quit:'qStart"#.into());
+    lines.push(r#"  Set qEnd=$FIND(xml,q,qStart)-1  Set msgType=$EXTRACT(xml,qStart,qEnd-1)"#.into());
+    lines.push(r#"  Set mTagEnd=$FIND(xml,"<Method>",qEnd)  Quit:'mTagEnd"#.into());
+    lines.push(r#"  Set mEnd=$FIND(xml,"</Method>",mTagEnd)-1"#.into());
+    lines.push(r#"  Set meth=$EXTRACT(xml,mTagEnd,mEnd-$LENGTH("</Method>"))"#.into());
+    lines.push(r#"  Set routes=routes_sep_"{"_q_"message_type"_q_":"_q_msgType_q_","_q_"method"_q_":"_q_meth_q_","_q_"confidence"_q_":0.9}""#.into());
+    lines.push(r#"  Set sep=",",pos=mEnd"#.into());
     lines.push("}".into());
     lines.push(r#"Set routes=routes_"]""#.into());
     lines.push(r#"Write "{"_q_"has_message_map"_q_":true,"_q_"routes"_q_":"_routes_"}",!"#.into());
@@ -463,8 +458,8 @@ mod tests {
             code.contains("HS.Flash.Router||MessageMap"),
             "must use || key"
         );
-        assert!(code.contains("%XML.TextReader"), "must use TextReader");
-        assert!(code.contains("MapItem"), "must look for MapItem nodes");
+        assert!(code.contains("MessageType="), "must search for MessageType attr");
+        assert!(code.contains("<Method>"), "must search for Method tag");
         assert!(
             code.contains("MessageType"),
             "must extract MessageType attr"
@@ -477,7 +472,7 @@ mod tests {
             code.contains("has_message_map"),
             "must emit has_message_map"
         );
-        assert!(code.contains("Rewind"), "must rewind stream before parsing");
+        assert!(code.contains("Read(32000)"), "must read stream content");
     }
 
     #[test]
