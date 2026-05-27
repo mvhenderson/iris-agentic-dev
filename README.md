@@ -1,6 +1,6 @@
 # iris-agentic-dev
 
-Connect GitHub Copilot, Claude Code, or any MCP-compatible AI assistant directly to a live InterSystems IRIS instance. Your AI can compile, test, search, read, write, and debug ObjectScript without leaving the chat.
+Connect GitHub Copilot, Claude Code, OpenCode, or any MCP-compatible AI assistant directly to a live InterSystems IRIS instance. Your AI can compile, test, search, read, write, and debug ObjectScript without leaving the chat.
 
 ---
 
@@ -75,6 +75,57 @@ For HTTPS or a non-root web gateway path:
 4. Reload VS Code — **iris-agentic-dev (IRIS)** appears automatically in Copilot Chat → Agent mode → tools
 
 The extension reads your existing `objectscript.conn` and `intersystems.servers` config — no extra setup if you already use the InterSystems VS Code extensions.
+
+### Option D: OpenCode
+
+OpenCode uses `~/.config/opencode/config.json` with an `mcp` section. The format differs from Claude Code in a few key ways:
+
+| Setting | Claude Code `settings.json` | OpenCode `config.json` |
+|---------|----------------------------|------------------------|
+| Section key | `mcpServers` | `mcp` |
+| Server type | `"type": "stdio"` | `"type": "local"` |
+| Credentials | `"env": {...}` | `"environment": {...}` |
+| Enable flag | not needed | `"enabled": true` required |
+
+Add this to `~/.config/opencode/config.json`:
+
+```json
+{
+  "mcp": {
+    "iris-agentic-dev": {
+      "type": "local",
+      "command": ["/opt/homebrew/bin/iris-agentic-dev", "mcp"],
+      "enabled": true,
+      "environment": {
+        "IRIS_HOST": "your-iris-host",
+        "IRIS_WEB_PORT": "52773",
+        "IRIS_USERNAME": "_SYSTEM",
+        "IRIS_PASSWORD": "SYS",
+        "IRIS_NAMESPACE": "USER"
+      }
+    }
+  }
+}
+```
+
+Replace `your-iris-host` with your IRIS hostname (use `localhost` for a local instance). For Homebrew-installed binaries, the path is `/opt/homebrew/bin/iris-agentic-dev`. For a manual install, use the full path to the binary.
+
+**With a Docker container** — add `IRIS_CONTAINER` to the `environment` block to enable tools that need direct container access:
+
+```json
+"environment": {
+  "IRIS_HOST": "localhost",
+  "IRIS_WEB_PORT": "52773",
+  "IRIS_USERNAME": "_SYSTEM",
+  "IRIS_PASSWORD": "SYS",
+  "IRIS_NAMESPACE": "USER",
+  "IRIS_CONTAINER": "my-iris-container"
+}
+```
+
+**Using `.iris-agentic-dev.toml` instead** — you can omit the `environment` block entirely and put connection settings in a workspace config file instead. See [Workspace config (.iris-agentic-dev.toml)](#workspace-config-iris-agentic-devtoml) below.
+
+**Verify the connection** — after restarting OpenCode, call the `check_config` tool in a session. It should return `"connected": true`.
 
 ---
 
