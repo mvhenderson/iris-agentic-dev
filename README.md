@@ -127,7 +127,26 @@ Replace `your-iris-host` with your IRIS hostname (use `localhost` for a local in
 
 **Verify the connection** — after restarting OpenCode, call the `check_config` tool in a session. It should return `"connected": true`.
 
-**WSL2 note** — if IRIS is running on the Windows host (the typical case), use the Windows binary (`iris-agentic-dev.exe`) and set `IRIS_HOST` to the Windows host IP. From inside WSL2, the Windows host is usually reachable at the IP shown by `cat /etc/resolv.conf | grep nameserver | awk '{print $2}'`. Using the Linux binary against a Windows-hosted IRIS will fail because `localhost` inside WSL2 resolves to the Linux VM, not Windows.
+**WSL2 setup** — WSL2 has two distinct configurations depending on whether you're running OpenCode from Windows or from inside WSL2:
+
+| Setup | OpenCode location | Binary to use | IRIS_HOST |
+|-------|------------------|---------------|-----------|
+| OpenCode Windows GUI | Windows process | Windows binary (`.exe`) | `localhost` (with mirrored networking) or Windows host IP |
+| OpenCode TUI inside WSL2 | Linux process | Linux binary | `localhost` (with mirrored networking) or `$(cat /etc/resolv.conf \| grep nameserver \| awk '{print $2}')` |
+
+**Important**: The Windows OpenCode GUI process cannot spawn Linux ELF binaries directly — even if the path looks like a WSL path. If you see `iris-agentic-dev failed` in the OpenCode MCP list when using the Windows GUI, the binary path is probably pointing to the Linux binary. Fix: use the Windows binary path:
+
+```json
+"command": ["C:\\Users\\yourname\\bin\\iris-agentic-dev.exe", "mcp"]
+```
+
+Or invoke the Linux binary via `wsl.exe` from the Windows config:
+
+```json
+"command": ["wsl.exe", "-e", "/usr/local/bin/iris-agentic-dev", "mcp"]
+```
+
+With mirrored networking (`networkingMode = mirrored` in `.wslconfig`), `localhost` works transparently in both directions — no need to find the Windows host IP.
 
 #### Troubleshooting
 
