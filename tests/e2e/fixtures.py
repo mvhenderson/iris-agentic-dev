@@ -22,7 +22,12 @@ def load_fixture(
             "enc": False,
             "content": fixture.content.splitlines(),
         }
-        r = requests.put(url, json=payload, auth=auth, timeout=30)
+        # Use ?ignoreConflict=1 so re-running the harness with an existing class succeeds
+        r = requests.put(url + "?ignoreConflict=1", json=payload, auth=auth, timeout=30)
+        if r.status_code == 409:
+            # Some IRIS versions don't support ignoreConflict; fall back to delete+put
+            requests.delete(url, auth=auth, timeout=30)
+            r = requests.put(url, json=payload, auth=auth, timeout=30)
         r.raise_for_status()
 
         compile_url = f"{base}/action/compile"

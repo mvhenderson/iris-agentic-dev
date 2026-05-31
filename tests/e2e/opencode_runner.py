@@ -9,10 +9,31 @@ from typing import Generator
 
 
 def parse_mcp_tool(tool_name: str) -> tuple[str | None, str]:
-    """Split 'server:tool' → (server, tool). Built-ins return (None, tool)."""
+    """Split MCP tool name into (server, tool).
+
+    OpenCode emits tool names as '{server}_{tool}' where server keeps its
+    original name (hyphens preserved). E.g. 'iris-agentic-dev' + 'iris_compile'
+    → 'iris-agentic-dev_iris_compile'.
+
+    Comparison is done with both the original name and the underscore-sanitized
+    version so callers can use either form.
+
+    Falls back to colon-split for forward compatibility.
+    """
     if ":" in tool_name:
         server, _, rest = tool_name.partition(":")
         return server, rest
+    # Known server names (original form with hyphens)
+    _KNOWN_SERVERS = [
+        "iris-agentic-dev",
+        "objectscript-plaza",
+        "objectscript",
+    ]
+    for server in _KNOWN_SERVERS:
+        prefix = server + "_"
+        if tool_name.startswith(prefix):
+            # Return sanitized server name (hyphens→underscores) for consistent matching
+            return server.replace("-", "_"), tool_name[len(prefix):]
     return None, tool_name
 
 

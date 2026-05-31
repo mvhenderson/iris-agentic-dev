@@ -55,8 +55,16 @@ ERROR_EVENT = json.dumps({
 UNKNOWN_EVENT = json.dumps({"type": "some_future_event", "data": {}})
 
 
-def test_parse_mcp_tool_with_server():
+def test_parse_mcp_tool_with_colon():
     server, tool = parse_mcp_tool("iris_agentic_dev:iris_compile")
+    assert server == "iris_agentic_dev"
+    assert tool == "iris_compile"
+
+
+def test_parse_mcp_tool_hyphen_server():
+    # OpenCode keeps hyphens in server name: iris-agentic-dev_iris_compile
+    # parse_mcp_tool returns underscore-sanitized server name for consistent matching
+    server, tool = parse_mcp_tool("iris-agentic-dev_iris_compile")
     assert server == "iris_agentic_dev"
     assert tool == "iris_compile"
 

@@ -19,15 +19,17 @@ def test_us2_check_config(openai_api_key, iris_available):
         events = collect_events(
             prompt="Call the check_config tool and tell me if IRIS is connected.",
             env_vars=env.env_vars(),
+            model="amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         )
     assert check_tool_called(events, "iris_agentic_dev", "check_config"), \
         "check_config must be called"
+    # Tool name is 'iris_agentic_dev_check_config' in event stream (sanitized)
     outputs = [
         e["part"]["state"].get("output", "")
         for e in events
         if e.get("type") == "tool_use"
-        and e["part"].get("tool") == "iris_agentic_dev:check_config"
         and e["part"]["state"].get("status") == "completed"
+        and e["part"].get("tool", "").endswith("check_config")
     ]
     assert any("connected" in o.lower() for o in outputs), \
         f"check_config output should mention connected. Got: {outputs}"

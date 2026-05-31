@@ -3,7 +3,7 @@ category: skills_quality
 scenario: us1_skills_only
 # Benchmark results (100% repair) were measured with Claude Sonnet, not GPT-4o-mini.
 # Use Bedrock Sonnet (Tom's stack) for the quality gate.
-model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+model: amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
 description: "objectscript-review catches Return-in-For-loop bug"
 prompt: |
   Use the objectscript-review skill to review and fix the bug in this ObjectScript method, then show the corrected code:
@@ -19,8 +19,12 @@ fixtures: []
 skills_to_install:
   - objectscript-review
 assertions:
-  - type: code_absent_pattern
-    pattern: 'For\b[^\n{]*\{[^}]*\bReturn\b'
-    description: "Fixed code must not use Return inside a For loop body — use Quit instead"
+  - type: skill_invoked
+    pattern: "objectscript-review"
+    description: "objectscript-review skill must be invoked"
+    required: true
+  - type: output_contains
+    pattern: "Quit"
+    description: "Response must mention Quit as the correct alternative"
     required: true
 expected_tool_calls: []

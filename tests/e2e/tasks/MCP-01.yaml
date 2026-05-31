@@ -1,6 +1,7 @@
 id: MCP-01
 category: mcp_tools
 scenario: us2_mcp
+model: amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
 description: "iris_compile is called and returns a real IRIS result"
 prompt: "Compile the class User.HarnessTestClass using the iris_compile tool."
 fixtures:
@@ -24,3 +25,5 @@ assertions:
     required: true
 expected_tool_calls:
   - "iris_agentic_dev:iris_compile"
+# Note: OpenCode event stream emits this as 'iris_agentic_dev_iris_compile'
+# (server hyphens→underscores, underscore separator). parse_mcp_tool handles this.

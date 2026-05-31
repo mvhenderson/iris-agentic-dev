@@ -20,6 +20,19 @@ from tests.e2e.result_writer import (
 )
 from tests.e2e.task_loader import HarnessTask, load_task, TASKS_DIR
 
+_LIGHT_SKILLS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "light-skills", "skills")
+
+
+def _install_skill_local(skill_name: str, skills_dir: str) -> None:
+    """Copy a skill from the local light-skills/ directory."""
+    import shutil
+    src = os.path.join(_LIGHT_SKILLS_DIR, skill_name, "SKILL.md")
+    if not os.path.exists(src):
+        raise FileNotFoundError(f"Skill '{skill_name}' not found in README or light-skills/")
+    dest_dir = os.path.join(skills_dir, skill_name)
+    os.makedirs(dest_dir, exist_ok=True)
+    shutil.copy2(src, os.path.join(dest_dir, "SKILL.md"))
+
 
 def run_task(
     task: HarnessTask,
@@ -36,11 +49,15 @@ def run_task(
         if iris_host and iris_web_port and iris_container:
             env.with_mcp(iris_host=iris_host, iris_web_port=iris_web_port, iris_container=iris_container)
 
-        # Install skills from README curl commands
+        # Install skills — from README curl if available, else from local light-skills/
         if task.skills_to_install:
             validator = ReadmeValidator(skills_dir=env.skills_dir, readme_path=readme_path)
             for skill_name in task.skills_to_install:
-                validator.install_skill(skill_name)
+                try:
+                    validator.install_skill(skill_name)
+                except ValueError:
+                    # Skill not in README — fall back to local light-skills/ directory
+                    _install_skill_local(skill_name, env.skills_dir)
 
         # Run OpenCode — task.model overrides the caller's default
         effective_model = task.model or model
@@ -58,11 +75,14 @@ def run_task(
         )
         code_blocks = extract_code_blocks(text_output)
 
-        # Collect tool calls
+        # Collect tool calls — normalize to 'server:tool' format for consistent comparison
         tool_calls_seen = []
         for e in events:
             if e.get("type") == "tool_use" and e.get("part", {}).get("state", {}).get("status") == "completed":
-                tool_calls_seen.append(e["part"]["tool"])
+                raw = e["part"]["tool"]
+                server, tool = parse_mcp_tool(raw)
+                normalized = f"{server}:{tool}" if server else tool
+                tool_calls_seen.append(normalized)
 
         # Check skill_loaded: skill tool was invoked or skill name appears in text
         skill_loaded = any(
@@ -82,6 +102,11 @@ def run_task(
             elif a.type == "tool_called":
                 server, tool = parse_mcp_tool(a.pattern)
                 passed = check_tool_called(events, server, tool)
+            elif a.type == "skill_invoked":
+                # Check that the 'skill' tool was called (skill name in tool_calls)
+                passed = "skill" in tool_calls_seen
+            elif a.type == "output_contains":
+                passed = a.pattern.lower() in text_output.lower()
             elif a.type == "tool_output_contains":
                 server, tool_name = parse_mcp_tool(a.pattern.split("|")[0])
                 substring = a.pattern.split("|")[1] if "|" in a.pattern else ""

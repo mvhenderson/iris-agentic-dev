@@ -1,6 +1,7 @@
 id: FULL-01
 category: full_stack
 scenario: us3_full_stack
+model: amazon-bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
 description: "docs_introspect then iris_compile — full skill+MCP chain"
 prompt: |
   Use docs_introspect to read the class User.HarnessTestClass, then write a
