@@ -1,0 +1,6 @@
+id: IRIS-PYTHON-CONNECT
+category: targeted
+description: "Write Python code that connects to an IRIS instance running on localhost port 1972, calls a ClassMethod named 'Hello' on the class 'User.HarnessTestClass', and prints the result."
+expected_behavior: "Uses the 'intersystems-irispython' package (NOT 'pyiris', NOT 'irisnative', NOT a JDBC driver). Uses iris.connect() or iris.createIRIS() with correct parameters (hostname, port, namespace, username, password). Calls classMethodValue() to invoke the ClassMethod. Does NOT use psycopg2, pymysql, or any PostgreSQL/MySQL driver."
+fixtures: []
+tags: [python, iris-connection, not-postgresql]

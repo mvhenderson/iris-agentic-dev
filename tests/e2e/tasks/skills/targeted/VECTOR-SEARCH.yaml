@@ -1,0 +1,6 @@
+id: VECTOR-SEARCH
+category: targeted
+description: "Write an ObjectScript ClassMethod that performs cosine similarity search on a RAG.Documents table. The table has a VECTOR(DOUBLE, 384) column named 'embedding'. The method should take a query vector string (comma-separated floats) and return the top 5 most similar documents."
+expected_behavior: "Uses TO_VECTOR(?, DOUBLE, 384) to convert the query string (NOT ::vector cast like pgvector). Uses VECTOR_COSINE() for similarity (NOT <=> operator). Uses TOP 5 in the SELECT (not LIMIT). SQL is valid IRIS SQL, not PostgreSQL. The method compiles without error."
+fixtures: []
+tags: [vector, iris-sql, not-pgvector]
