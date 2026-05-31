@@ -127,7 +127,15 @@ def run_task_and_score(
                 ReadmeValidator(skills_dir=env.skills_dir).install_skill(skill_name_or_none)
             except (ValueError, Exception):
                 _install_skill_local(skill_name_or_none, env.skills_dir)
-        events = collect_events(prompt, env.env_vars(), model=model)
+        # Use a fresh temp workdir so previous eval artifacts don't pollute the session
+        # Keep the workdir alive after collect_events so we can read written files
+        import tempfile
+        workdir_obj = tempfile.TemporaryDirectory(prefix="iad-eval-workdir-")
+        workdir = workdir_obj.name
+        try:
+            events = collect_events(prompt, env.env_vars(), model=model, working_dir=workdir)
+        finally:
+            pass  # workdir_obj cleanup happens below
 
     # Check for tool_assertions in task — bypasses LLM judge, scores by tool calls
     tool_assertions = task_dict.get("tool_assertions", [])
@@ -144,15 +152,29 @@ def run_task_and_score(
     # For no-MCP (light-skills) mode: extract written file content and present as response
     # The model writes .cls files locally; judge should assess the code quality, not tool use
     if no_mcp:
-        written_content = _extract_written_content(events)
+        written_content = _read_cls_files_from_workdir(workdir) or _extract_written_content(events)
+        workdir_obj.cleanup()
         if written_content:
-            # Score the written code content directly, without tool-call overhead confusion
-            result = {"transcript": [{"role": "assistant", "text": written_content}], "tool_call_count": 0, "path": "B"}
-            scored = score_result(task_dict, result)
-            # Score 1 = correct code but judge wants compilation proof; treat as pass in light-skills
-            if scored["score"] == 1:
-                scored = {**scored, "score": 2, "reasoning": scored["reasoning"] + " [light-skills pass]"}
-            return {**scored, "task_id": task_id, "condition": skill_name_or_none or "baseline"}
+            # Score using compile + expected_behavior pattern matching, NOT the LLM judge
+            # The LLM judge (Haiku) is calibrated for agent tool-loops and misscores bare code
+            compile_result = _try_compile_via_atelier(written_content, iris_host, iris_web_port)
+            compiled_ok = "Compiled OK" in compile_result
+            # Check expected_behavior patterns if defined
+            expected = task_dict.get("expected_behavior", "")
+            patterns_met = _check_expected_patterns(written_content, expected)
+            if compiled_ok and patterns_met:
+                score, reasoning = 3, f"Compiled OK and meets expected behavior patterns"
+            elif compiled_ok:
+                score, reasoning = 2, f"Compiled OK but expected behavior patterns not fully met"
+            elif patterns_met:
+                score, reasoning = 1, f"Expected patterns present but did not compile: {compile_result}"
+            else:
+                score, reasoning = 0, f"Did not compile and patterns not met: {compile_result}"
+            return {"score": score, "reasoning": reasoning, "task_id": task_id, "condition": skill_name_or_none or "baseline"}
+    try:
+        workdir_obj.cleanup()
+    except Exception:
+        pass
 
     turns = format_transcript(events)
     tool_count = sum(
@@ -166,8 +188,67 @@ def run_task_and_score(
     return {**scored, "task_id": task_id, "condition": skill_name_or_none or "baseline"}
 
 
+def _check_expected_patterns(content: str, expected_behavior: str) -> bool:
+    """Check if key API patterns from expected_behavior appear in the written content."""
+    import re
+    # Extract quoted API names from expected_behavior (e.g., Ens.Director.StartProduction)
+    api_names = re.findall(r'`([^`]+)`|\b(Ens\.Director\.\w+|##class\([^)]+\)|\$\$\$\w+)\b', expected_behavior)
+    flat = [a for pair in api_names for a in pair if a]
+    if not flat:
+        return True  # no specific patterns to check
+    hits = sum(1 for p in flat if p in content)
+    return hits >= len(flat) // 2  # at least half the patterns present
+
+
+def _try_compile_via_atelier(cls_content: str, iris_host: str, iris_web_port: str) -> str:
+    """Load and compile a class via Atelier REST. Returns 'compiled OK' or error string."""
+    try:
+        import requests, re
+        # Extract class name from content
+        m = re.search(r'^Class\s+([\w.]+)', cls_content, re.MULTILINE)
+        if not m:
+            return "Could not determine class name"
+        cls_name = m.group(1)
+        auth = ("_SYSTEM", "SYS")
+        base = f"http://{iris_host}:{iris_web_port}/api/atelier/v1/USER"
+        # Write the document
+        r = requests.put(
+            f"{base}/doc/{cls_name}.cls?ignoreConflict=1",
+            json={"enc": False, "content": cls_content.splitlines()},
+            auth=auth, timeout=30
+        )
+        if r.status_code not in (200, 201):
+            return f"PUT failed: HTTP {r.status_code}"
+        # Compile
+        r2 = requests.post(f"{base}/action/compile", json=[f"{cls_name}.cls"], auth=auth, timeout=30)
+        result = r2.json().get("result", {})
+        errors = [s for s in result.get("status", []) if "ERROR" in str(s).upper()]
+        if errors:
+            return f"Compile errors: {errors[:2]}"
+        return f"Compiled OK: {cls_name}"
+    except Exception as e:
+        return f"Compile check failed: {e}"
+
+
+def _read_cls_files_from_workdir(workdir: str) -> str:
+    """Read all .cls files written to the workdir during the eval session."""
+    contents = []
+    for root, _, files in os.walk(workdir):
+        for f in sorted(files):
+            if f.endswith(".cls"):
+                try:
+                    path = os.path.join(root, f)
+                    text = open(path).read()
+                    if len(text) > 50:
+                        contents.append(text)
+                except Exception:
+                    pass
+    return "\n\n".join(contents)
+
+
 def _extract_written_content(events: list[dict]) -> str:
-    """Extract content from write tool calls — used in no-MCP mode to get the actual code."""
+    """Extract code content from write/edit tool calls — used in no-MCP light-skills mode."""
+    best = ""
     for event in events:
         if event.get("type") != "tool_use":
             continue
@@ -176,12 +257,19 @@ def _extract_written_content(events: list[dict]) -> str:
         if state.get("status") != "completed":
             continue
         tool = part.get("tool", "")
+        inp = state.get("input", {})
         if tool == "write":
-            inp = state.get("input", {})
             content = inp.get("content", "")
-            if content and len(content) > 50:
-                return content
-    # Fall back to text output
+            if content and len(content) > len(best):
+                best = content
+        elif tool == "edit":
+            # Edit gives new_string — take it if substantial
+            new_str = inp.get("new_string", "")
+            if new_str and len(new_str) > len(best):
+                best = new_str
+    if best:
+        return best
+    # Fall back to accumulated text output
     texts = [
         e["part"].get("text", "")
         for e in events
