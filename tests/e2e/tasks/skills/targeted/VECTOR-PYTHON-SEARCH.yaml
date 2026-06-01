@@ -1,0 +1,6 @@
+id: VECTOR-PYTHON-SEARCH
+category: targeted
+description: "Write a Python function using iris.dbapi that takes a comma-separated string of 384 floats as a query vector and returns the 5 most similar documents from RAG.Documents, ranked by cosine similarity. The table has an 'embedding' column of type VECTOR(DOUBLE, 384)."
+expected_behavior: "SQL uses `VECTOR_COSINE` for cosine similarity — NOT `<=>` operator. Uses `TO_VECTOR(?, DOUBLE, 384)` to convert the query string — must be the 3-argument form matching the column type. Uses `TOP 5` in the SELECT — NOT `LIMIT`. Never selects the raw embedding column directly."
+fixtures: []
+tags: [vector, python, dbapi, to-vector-3-arg]

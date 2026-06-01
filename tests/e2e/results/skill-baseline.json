@@ -1,1 +1,8 @@
-{}
+{
+  "iris-vector-ai": {
+    "fire_rate": 1.0,
+    "lift": 0.4,
+    "pass_rate_baseline": 0.2,
+    "pass_rate_skill": 0.6
+  }
+}

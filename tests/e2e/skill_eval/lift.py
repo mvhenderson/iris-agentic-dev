@@ -155,21 +155,30 @@ def run_task_and_score(
         written_content = _read_cls_files_from_workdir(workdir) or _extract_written_content(events)
         workdir_obj.cleanup()
         if written_content:
-            # Score using compile + expected_behavior pattern matching, NOT the LLM judge
-            # The LLM judge (Haiku) is calibrated for agent tool-loops and misscores bare code
-            compile_result = _try_compile_via_atelier(written_content, iris_host, iris_web_port)
-            compiled_ok = "Compiled OK" in compile_result
-            # Check expected_behavior patterns if defined
             expected = task_dict.get("expected_behavior", "")
             patterns_met = _check_expected_patterns(written_content, expected)
-            if compiled_ok and patterns_met:
-                score, reasoning = 3, f"Compiled OK and meets expected behavior patterns"
-            elif compiled_ok:
-                score, reasoning = 2, f"Compiled OK but expected behavior patterns not fully met"
-            elif patterns_met:
-                score, reasoning = 1, f"Expected patterns present but did not compile: {compile_result}"
+            tags = task_dict.get("tags", [])
+            is_objectscript = any(t in tags for t in ["objectscript", "cls", "ens-director"]) or \
+                              "Class " in written_content[:200]
+
+            if is_objectscript:
+                # ObjectScript: try to compile for verification
+                compile_result = _try_compile_via_atelier(written_content, iris_host, iris_web_port)
+                compiled_ok = "Compiled OK" in compile_result
+                if compiled_ok and patterns_met:
+                    score, reasoning = 3, "Compiled OK and meets expected behavior patterns"
+                elif compiled_ok:
+                    score, reasoning = 2, "Compiled OK but expected behavior patterns not fully met"
+                elif patterns_met:
+                    score, reasoning = 1, f"Expected patterns present but did not compile: {compile_result}"
+                else:
+                    score, reasoning = 0, f"Did not compile and patterns not met: {compile_result}"
             else:
-                score, reasoning = 0, f"Did not compile and patterns not met: {compile_result}"
+                # Python / SQL / other: pattern-only scoring (no compile step)
+                if patterns_met:
+                    score, reasoning = 3, "All expected patterns present, no forbidden patterns found"
+                else:
+                    score, reasoning = 0, "Expected patterns missing or forbidden patterns present"
             return {"score": score, "reasoning": reasoning, "task_id": task_id, "condition": skill_name_or_none or "baseline"}
     try:
         workdir_obj.cleanup()
@@ -248,11 +257,11 @@ def _try_compile_via_atelier(cls_content: str, iris_host: str, iris_web_port: st
 
 
 def _read_cls_files_from_workdir(workdir: str) -> str:
-    """Read all .cls files written to the workdir during the eval session."""
+    """Read all code files written to the workdir during the eval session."""
     contents = []
     for root, _, files in os.walk(workdir):
         for f in sorted(files):
-            if f.endswith(".cls"):
+            if f.endswith((".cls", ".py", ".sql")):
                 try:
                     path = os.path.join(root, f)
                     text = open(path).read()
