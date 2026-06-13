@@ -243,38 +243,31 @@ pub fn apply_workspace_config(
 }
 
 /// Generate starter `.iris-agentic-dev.toml` content with inline comments.
-/// Used by `iris-dev init`.
+/// Used by `iris-dev init` and `check_config`.
 pub fn generate_toml_content(container: &str, namespace: &str) -> String {
     format!(
         r#"# iris-agentic-dev workspace configuration
 # Commit this file to share connection settings with your team.
 
-# Docker container name (for docker exec tools: iris_execute, iris_test).
+# ── Native IRIS (no Docker) — Windows IIS or Linux Apache ──────────────────
+# For IRIS installed directly on the host (not in Docker), uncomment and set:
+# host = "localhost"
+# web_port = 80       # IIS default (IRIS 2024.1+); use 52773 for pre-2024.1 Private Web Server
+# web_prefix = ""     # URL path prefix, e.g. "iris" when Atelier is at /iris/api/atelier/
+# namespace = "USER"
+# scheme = "http"     # Use "https" for TLS-protected IRIS web gateways
+
+# ── Docker container ────────────────────────────────────────────────────────
+# For IRIS running in Docker, uncomment and set container name:
 # NOTE: iris-agentic-dev requires the IRIS Atelier REST API. Three supported configurations:
 #   1. Community images (iris-community, irishealth-community) — include private web server on port 52773
 #   2. Enterprise + ISC Web Gateway container (intersystems/webgateway) — iris-agentic-dev auto-detects it
 #   3. Enterprise standalone (intersystems/iris) — NOT supported, no Atelier REST available
 #
-# If you are using an enterprise-only image, see the two-container pattern below.
-container = "{container}"
+# container = "{container}"
 
 # Default IRIS namespace
 namespace = "{namespace}"
-
-# Direct host connection for Atelier REST (compile, search, info, doc, etc.)
-# Use this when your container does NOT have the private web server (enterprise images),
-# or when connecting to a remote IRIS instance.
-# host = "localhost"
-# web_port = 52773
-# web_prefix = ""  # URL path prefix, e.g. "irisaicore" when Atelier is at /irisaicore/api/atelier/
-# scheme = "http"  # Use "https" for TLS-protected IRIS web gateways
-
-# TWO-CONTAINER PATTERN (enterprise + community side-by-side):
-# If your enterprise container lacks the private web server, run a community
-# container alongside it and point iris-agentic-dev at the community one for Atelier REST.
-# Set container = "my-enterprise-iris" above for docker exec tools,
-# and uncomment host + web_port below pointing at the community instance.
-# The MCP env var IRIS_CONTAINER will override container for docker exec.
 
 # Credentials (optional)
 # Use IRIS_USERNAME / IRIS_PASSWORD env vars instead of committing credentials.
@@ -282,4 +275,49 @@ namespace = "{namespace}"
 # password = "..."  # not recommended in committed files
 "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toml_template_native_section_before_container() {
+        let content = generate_toml_content("my-iris", "USER");
+        let native_pos = content
+            .find("Native IRIS")
+            .expect("template must contain 'Native IRIS' section header");
+        let container_pos = content
+            .find("Docker container")
+            .expect("template must contain 'Docker container' section header");
+        assert!(
+            native_pos < container_pos,
+            "Native IRIS section must appear before Docker container section"
+        );
+    }
+
+    #[test]
+    fn toml_template_has_port_80_comment() {
+        let content = generate_toml_content("my-iris", "USER");
+        assert!(
+            content.contains("web_port = 80"),
+            "template must document port 80 as IIS default"
+        );
+    }
+
+    #[test]
+    fn toml_template_both_sections_commented_by_default() {
+        let content = generate_toml_content("my-iris", "USER");
+        // Neither host nor container should be active (uncommented) assignments
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') || trimmed.is_empty() {
+                continue;
+            }
+            assert!(
+                !trimmed.starts_with("host =") && !trimmed.starts_with("container ="),
+                "host and container must be commented out in default template, found: {trimmed}"
+            );
+        }
+    }
 }

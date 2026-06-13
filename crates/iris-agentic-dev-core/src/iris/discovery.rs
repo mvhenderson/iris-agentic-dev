@@ -73,13 +73,22 @@ async fn probe_atelier_with_client(
 
     if resp.status().as_u16() == 401 {
         // #21: iris-community containers started without IRIS_PASSWORD have OS auth only.
-        // Basic auth is rejected. Log a hint so the user knows what to do.
-        tracing::warn!(
-            "IRIS at {}:{} returned 401 — container may need IRIS_PASSWORD. \
-             Restart with: docker run -e IRIS_PASSWORD=SYS ...",
-            host,
-            port
-        );
+        // Basic auth is rejected. Only suggest Docker restart if a container is configured.
+        if std::env::var("IRIS_CONTAINER").is_ok() {
+            tracing::warn!(
+                "IRIS at {}:{} returned 401 — container may need IRIS_PASSWORD. \
+                 Restart with: docker run -e IRIS_PASSWORD=SYS ...",
+                host,
+                port
+            );
+        } else {
+            tracing::warn!(
+                "IRIS at {}:{} returned 401 — check credentials. \
+                 Verify IRIS_USERNAME/IRIS_PASSWORD or set username/password in .iris-agentic-dev.toml.",
+                host,
+                port
+            );
+        }
         return None;
     }
     if !resp.status().is_success() {

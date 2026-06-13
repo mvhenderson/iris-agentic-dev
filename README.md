@@ -240,6 +240,41 @@ services:
 
 See the [`iris-vscode-objectscript` skill](./light-skills/skills/iris-vscode-objectscript/SKILL.md) for a working `webgateway-init.sh`.
 
+### Connecting to IRIS without Docker
+
+For IRIS installed directly on Windows or Linux (no Docker), use `host` + `web_port` in `.iris-agentic-dev.toml`:
+
+```toml
+# Native IRIS — no Docker required
+host = "localhost"
+web_port = 80        # IIS default (IRIS 2024.1+); use 52773 for pre-2024.1 Private Web Server
+namespace = "USER"
+```
+
+**Port guide**
+
+| IRIS version | Default web server | Port |
+|---|---|---|
+| 2024.1+ | IIS (Windows) or Apache (Linux) | 80 |
+| Pre-2024.1 | Private Web Server (PWS) | 52773 |
+
+**Windows IIS: `/api` web application required (most common failure)**
+
+IRIS on Windows uses IIS as the web server. IIS requires an explicit `/api` web application mapped to the IRIS Web Gateway module. Without it, `/api/atelier` returns 404 even when the Management Portal loads correctly.
+
+To fix: open **IIS Manager** → expand your server → **Sites** → **Default Web Site** → right-click → **Add Application**. Set alias to `api`, physical path to the Web Gateway directory (e.g. `C:\InterSystems\IRIS\CSP\bin`), and add a wildcard script handler mapping to `CSPms.dll`. Also verify `CSP.ini` contains an `[APP_PATH:/api]` entry.
+
+See the [`iris-windows-iis-setup` skill](./light-skills/skills/iris-windows-iis-setup/SKILL.md) for step-by-step instructions.
+
+**`localhost` vs `127.0.0.1`**
+
+On older Web Gateway builds, using `localhost` as the hostname causes a per-connection 10061 error before each request (visible as connection delays). If you see this, use `127.0.0.1` explicitly:
+
+```toml
+host = "127.0.0.1"
+web_port = 80
+```
+
 ---
 
 ## Tools

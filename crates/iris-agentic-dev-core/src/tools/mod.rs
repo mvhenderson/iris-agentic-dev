@@ -1,5 +1,11 @@
 use crate::elicitation::ElicitationStore;
 use crate::iris::connection::IrisConnection;
+
+/// Remediation hint appended to DOCKER_REQUIRED error strings.
+/// Guides native IRIS users (no Docker) toward the HTTP/Atelier REST path.
+const DOCKER_REQUIRED_HINT: &str = " Ensure HTTP/Atelier REST is reachable: verify \
+    http://<host>:<port>/api/atelier and set host/web_port in .iris-agentic-dev.toml.";
+
 use rmcp::{
     handler::server::router::tool::ToolRouter, handler::server::wrapper::Parameters, model::*,
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
@@ -2169,7 +2175,7 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
                             return ok_json(serde_json::json!({
                                 "success": false,
                                 "error_code": "DOCKER_REQUIRED",
-                                "error": "iris_test: IRIS_CONTAINER set but docker exec failed and HTTP fallback also failed.",
+                                "error": format!("iris_test: IRIS_CONTAINER set but docker exec failed and HTTP fallback also failed.{DOCKER_REQUIRED_HINT}"),
                             }));
                         }
                     }
@@ -2485,7 +2491,7 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
                     ok_json(serde_json::json!({
                         "success": false,
                         "error_code": "DOCKER_REQUIRED",
-                        "error": "iris_execute: HTTP execution failed and IRIS_CONTAINER is not set for docker exec fallback.",
+                        "error": format!("iris_execute: HTTP execution failed and IRIS_CONTAINER is not set for docker exec fallback.{DOCKER_REQUIRED_HINT}"),
                     }))
                 } else {
                     ok_json(serde_json::json!({
@@ -2824,7 +2830,7 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
     }
 
     #[tool(
-        description = "Return the active IRIS connection state without making any IRIS network calls. Always succeeds — never returns IRIS_UNREACHABLE. Use to: (1) diagnose connection issues, (2) verify hot-reload completed, (3) confirm which container/host is active. To switch connection mid-session without restart: call check_config first to get config_watch_path, then write a .iris-agentic-dev.toml to that exact path, then call any tool — the reload fires automatically. Fields: connected, host, port, namespace, container, config_file, config_watch_path, config_loaded_at, iris_version, write_tools_enabled, connection_source."
+        description = "Return the active IRIS connection state without making any IRIS network calls. Always succeeds — never returns IRIS_UNREACHABLE. Use to: (1) diagnose connection issues, (2) verify hot-reload completed, (3) confirm which container/host is active. To switch connection mid-session without restart: call check_config first to get config_watch_path, then write a .iris-agentic-dev.toml to that exact path, then call any tool — the reload fires automatically. Fields: connected, connection_source (http|docker|disconnected), host, port, namespace, container, config_file, config_watch_path, config_loaded_at, iris_version, write_tools_enabled."
     )]
     async fn check_config(
         &self,
@@ -2902,6 +2908,7 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
 
         let mut response = serde_json::json!({
             "connected": conn.iris.is_some(),
+            "connection_source": connection_source,
             "host": host,
             "port": port,
             "namespace": namespace,
@@ -2910,7 +2917,6 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
             "config_loaded_at": config_loaded_at,
             "iris_version": iris_version,
             "write_tools_enabled": conn.write_tools_enabled,
-            "connection_source": connection_source,
             "config_watch_path": config_watcher_path,
         });
 
@@ -3130,7 +3136,7 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
             }
             Err(e) if e.to_string() == "DOCKER_REQUIRED" => ok_json(serde_json::json!({
                 "success": false, "error_code": "DOCKER_REQUIRED",
-                "error": "debug_map_int requires docker exec. Set IRIS_CONTAINER=<container_name>.",
+                "error": format!("debug_map_int requires docker exec. Set IRIS_CONTAINER=<container_name>.{DOCKER_REQUIRED_HINT}"),
             })),
             Err(e) => err_json("IRIS_UNREACHABLE", &e.to_string()),
         }
@@ -3225,7 +3231,7 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
             }
             Err(e) if e.to_string() == "DOCKER_REQUIRED" => ok_json(serde_json::json!({
                 "success": false, "error_code": "DOCKER_REQUIRED",
-                "error": "debug_source_map requires docker exec. Set IRIS_CONTAINER=<container_name>.",
+                "error": format!("debug_source_map requires docker exec. Set IRIS_CONTAINER=<container_name>.{DOCKER_REQUIRED_HINT}"),
             })),
             Err(e) => err_json("IRIS_UNREACHABLE", &e.to_string()),
         }
@@ -3480,7 +3486,7 @@ Methods:
         }
         err_json(
             "DOCKER_REQUIRED",
-            "skill_forget requires docker exec. Set IRIS_CONTAINER=<container_name>.",
+            &format!("skill_forget requires docker exec. Set IRIS_CONTAINER=<container_name>.{DOCKER_REQUIRED_HINT}"),
         )
     }
 
@@ -4967,5 +4973,49 @@ mod schema_normalization_tests {
         let original = schema.clone();
         normalize_schema_openapi3(&mut schema);
         assert_eq!(schema, original, "non-nullable schema should be unchanged");
+    }
+
+    // ── check_config field ordering ───────────────────────────────────────────
+    #[test]
+    fn check_config_connection_source_before_host() {
+        // Verify connection_source appears before host in the JSON key order.
+        // serde_json::json! preserves insertion order — this test guards that ordering.
+        let sample = serde_json::json!({
+            "connected": true,
+            "connection_source": "http",
+            "host": "localhost",
+            "port": 52773_u16,
+            "namespace": "USER",
+            "container": serde_json::Value::Null,
+            "config_file": serde_json::Value::Null,
+            "config_loaded_at": serde_json::Value::Null,
+            "iris_version": serde_json::Value::Null,
+            "write_tools_enabled": true,
+            "config_watch_path": serde_json::Value::Null,
+        });
+        let serialized = serde_json::to_string(&sample).unwrap();
+        let conn_src_pos = serialized.find("connection_source").unwrap();
+        let host_pos = serialized.find("\"host\"").unwrap();
+        assert!(
+            conn_src_pos < host_pos,
+            "connection_source must appear before host in check_config output (got positions {conn_src_pos} vs {host_pos})"
+        );
+    }
+
+    // ── DOCKER_REQUIRED remediation hint ─────────────────────────────────────
+    #[test]
+    fn docker_required_hint_contains_http_guidance() {
+        assert!(
+            DOCKER_REQUIRED_HINT.contains("http://"),
+            "DOCKER_REQUIRED hint must reference HTTP URL pattern"
+        );
+        assert!(
+            DOCKER_REQUIRED_HINT.contains(".iris-agentic-dev.toml"),
+            "DOCKER_REQUIRED hint must reference the toml config file"
+        );
+        assert!(
+            !DOCKER_REQUIRED_HINT.to_lowercase().contains("docker run"),
+            "DOCKER_REQUIRED hint must not suggest 'docker run' (guides non-Docker users)"
+        );
     }
 }

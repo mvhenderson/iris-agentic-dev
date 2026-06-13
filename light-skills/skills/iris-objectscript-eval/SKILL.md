@@ -140,3 +140,4 @@ docker run -d --name my-iris -p 0:1972 \
 | Password change required on new container | Use `iris-devtester` — auto-remediates in 1.15.0+ |
 | Block-structured code via stdin fails | `iris session` REPL processes one line at a time — `If x { }` and `While x { }` cause `<SYNTAX>`. Put logic in class methods and call `do ##class(X).Method()` |
 | **Partial execution trap**: block fails but inner calls run | When a block errors in the REPL, statements INSIDE the block may still have executed. Never assume a `<SYNTAX>` means nothing ran — check side effects before retrying. |
+| **Windows IIS: `/api` web application missing** | `/api/atelier` returns 404 even when Management Portal works. In IIS Manager: Add Application at alias `/api`, map to Web Gateway dir, add wildcard script handler `CSPms.dll`. Also verify `CSP.ini` contains `[APP_PATH:/api]`. See `iris-windows-iis-setup` skill. |
