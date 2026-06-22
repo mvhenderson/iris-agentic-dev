@@ -1,0 +1,20 @@
+id: ENSEMBLE-PYPROD
+category: targeted
+description: |
+  Write a Python script (for use inside an IRIS embedded Python session via iris_execute)
+  that uses the intersystems_pyprod library to:
+  1. Check whether an Interoperability production is currently running
+  2. If the production is not running, start the production named "MyApp.Production"
+  3. Print a one-line status summary
+
+  Use only the director module from intersystems_pyprod.
+expected_behavior: |
+  Imports using `from intersystems_pyprod import director`.
+  Calls `director.get_production_status()` and unpacks the result into three variables.
+  Compares state using string equality: `== "2"` for stopped (state is a string "2", not an integer 2).
+  Calls `director.start_production(` when state is stopped.
+fixtures: []
+tags:
+  - python
+  - pyprod
+  - director

@@ -5,7 +5,7 @@ fire_rate_prompt: |
 implicit_fire_rate_prompt: |
   Our IRIS Interoperability production seems to have stopped processing messages. Walk me through how to diagnose and fix it.
 benchmark_tasks:
-  - ENSEMBLE-OBJECTSCRIPT
+  - ENSEMBLE-PYPROD
 domain_skill: true
 isolation_prompt: |
   Fix this ObjectScript SQL query — the table name is wrong (should use underscore, not dot for the SQL table name):

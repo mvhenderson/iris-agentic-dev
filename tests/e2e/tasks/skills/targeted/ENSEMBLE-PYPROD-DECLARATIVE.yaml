@@ -1,0 +1,23 @@
+id: ENSEMBLE-PYPROD-DECLARATIVE
+category: targeted
+description: |
+  Write a Python file that uses the intersystems_pyprod library to declaratively define
+  an IRIS Interoperability production called MyHL7Production with the following components:
+  - One business service named "HL7Inbound" using class EnsLib.HL7.Service.FileService
+    with adapter setting FilePath=/data/hl7/in
+  - One business process named "HL7Router" using class MyApp.HL7RouterBP
+
+  Use the Production, ServiceItem, and ProcessItem classes from intersystems_pyprod.
+  Set iris_package_name appropriately before defining the Production subclass.
+expected_behavior: |
+  Defines `class MyHL7Production(Production):` as a subclass of the pyprod Production class.
+  Uses `ServiceItem(` to declare the HL7Inbound business service with EnsLib.HL7.Service.FileService.
+  Uses `ProcessItem(` to declare the HL7Router business process.
+  Sets `iris_package_name` as a module-level variable before the Production subclass definition.
+  Does NOT write raw XML or use `<Production`.
+  Does NOT call iris.Ens.Director directly.
+fixtures: []
+tags:
+  - python
+  - pyprod
+  - declarative
