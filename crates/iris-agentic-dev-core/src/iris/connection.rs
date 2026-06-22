@@ -286,9 +286,7 @@ impl IrisConnection {
         let doc_name = format!("{}.cls", class_name);
         // SQL proc name: IrisDevTmp package maps to SQLIrisDevTmp schema in IRIS SQL.
         let sql_func = format!("SQLIrisDevTmp.IrisDevRun{}_Execute", id);
-        let tmpfile = format!("/tmp/irisd_{}.txt", id);
-
-        let content = Self::build_exec_class(&class_name, &tmpfile, code);
+        let content = Self::build_exec_class(&class_name, code);
 
         // 1. PUT the class document
         let put_url = self.versioned_ns_url(
@@ -357,14 +355,16 @@ impl IrisConnection {
     }
 
     /// Build the `.cls` source lines for the temp executor class.
-    fn build_exec_class(class_name: &str, tmpfile: &str, code: &str) -> Vec<String> {
+    fn build_exec_class(class_name: &str, code: &str) -> Vec<String> {
         let mut lines: Vec<String> = vec![
             format!("Class {} [ Final ]", class_name),
             "{".into(),
             "".into(),
             "ClassMethod Execute() As %String [ CodeMode = objectgenerator, SqlProc ]".into(),
             "{".into(),
-            format!("  Set tmpfile = \"{}\"", tmpfile),
+            // Use a platform-portable temp path (#56): %Library.File.TempFilename works on
+            // both Unix (/tmp/...) and Windows (C:\Windows\Temp\...).
+            "  Set tmpfile = ##class(%Library.File).TempFilename(\"txt\")".into(),
             "  Set savedIO = $IO".into(),
             "  Open tmpfile:(\"WNS\"):5".into(),
             "  If '$TEST { Do %code.WriteLine(\" Quit \"\"ERROR: output capture unavailable\"\"\") Quit }".into(),
@@ -561,8 +561,8 @@ impl IrisConnection {
 
     /// Test accessor for build_exec_class. Exposed for integration tests.
     #[doc(hidden)]
-    pub fn build_exec_class_for_test(class_name: &str, tmpfile: &str, code: &str) -> Vec<String> {
-        Self::build_exec_class(class_name, tmpfile, code)
+    pub fn build_exec_class_for_test(class_name: &str, _tmpfile: &str, code: &str) -> Vec<String> {
+        Self::build_exec_class(class_name, code)
     }
 }
 
