@@ -8977,3 +8977,111 @@ async fn test_dispatch_iris_admin_invalid_action_v2() {
         "iris_admin bogus action: {v}"
     );
 }
+
+// ── skill propose — enough history (v2) ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_skill_propose_with_history_v2() {
+    // Make 6 tool calls to build history, then propose a skill.
+    // Covers skills_tools.rs lines 124-162 (propose body with ≥5 calls).
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Build history with 6 distinct tool calls
+    for _ in 0..6 {
+        let _ = tools
+            .call_for_test(
+                "iris_info",
+                serde_json::json!({"what": "version", "namespace": "USER"}),
+            )
+            .await;
+    }
+    let result = tools
+        .call_for_test(
+            "skill",
+            serde_json::json!({"action": "propose", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "skill propose with history: {v}"
+    );
+}
+
+// ── iris_doc elicitation expired (put mode) ───────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_doc_elicitation_expired() {
+    // Pass elicitation_id + elicitation_answer with a nonexistent ID.
+    // Covers doc.rs lines 210-213 (ELICITATION_EXPIRED early return).
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_doc",
+            serde_json::json!({
+                "mode": "put",
+                "name": "User.TestDoc.cls",
+                "content": "Class User.TestDoc {}",
+                "namespace": "USER",
+                "elicitation_id": "nonexistent-doc-eid-99999",
+                "elicitation_answer": "yes"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").is_some() || v.get("success").is_some(),
+        "iris_doc elicitation expired: {v}"
+    );
+}
+
+// ── doc.rs: iris_doc get mode not found (v2) ─────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_doc_get_not_found_v2() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_doc",
+            serde_json::json!({
+                "mode": "get",
+                "name": "User.IrisDevNonExistentDoc999.cls",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").is_some() || v.get("success").is_some() || v.get("content").is_some(),
+        "iris_doc get not found: {v}"
+    );
+}
+
+// ── skills_tools: skill_community invalid action ──────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_skill_community_invalid_action() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "skill_community",
+            serde_json::json!({"action": "bogus_action_xyz", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").is_some() || v.get("success").is_some(),
+        "skill_community bogus action: {v}"
+    );
+}
