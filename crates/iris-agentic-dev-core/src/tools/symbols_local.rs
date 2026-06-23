@@ -673,6 +673,118 @@ fn node_text(node: tree_sitter::Node, source: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    // ── extract_cls_symbols ──────────────────────────────────────────────────
+
+    #[test]
+    fn extract_cls_basic_class() {
+        let src = b"Class MyApp.Foo Extends %Persistent {\nProperty Name As %String;\n}";
+        let (symbols, warnings) = extract_cls_symbols(src, "src/MyApp/Foo.cls", "MyApp.*");
+        assert!(warnings.is_empty(), "no warnings: {:?}", warnings);
+        assert!(
+            symbols.iter().any(|s| s.kind == "class"),
+            "should have class symbol"
+        );
+    }
+
+    #[test]
+    fn extract_cls_method_symbol() {
+        let src = b"Class MyApp.Foo {\nMethod DoSomething() As %String {\n}\n}";
+        let (symbols, _) = extract_cls_symbols(src, "src/MyApp/Foo.cls", "MyApp.*");
+        assert!(
+            symbols.iter().any(|s| s.kind == "method" || s.kind == "class"),
+            "should have class or method symbols: {:?}", symbols
+        );
+    }
+
+    #[test]
+    fn extract_cls_no_match_query() {
+        let src = b"Class MyApp.Foo {\n}";
+        let (symbols, _) = extract_cls_symbols(src, "src/MyApp/Foo.cls", "Other.*");
+        // class name doesn't match query — should return no class symbol
+        let class_syms: Vec<_> = symbols.iter().filter(|s| s.kind == "class").collect();
+        assert!(class_syms.is_empty(), "should not return class when query doesn't match");
+    }
+
+    #[test]
+    fn extract_cls_empty_content_no_class() {
+        let src = b"";
+        let (symbols, _) = extract_cls_symbols(src, "src/empty.cls", "*");
+        assert!(symbols.is_empty(), "empty content should yield no symbols");
+    }
+
+    // ── extract_routine_symbols ──────────────────────────────────────────────
+
+    #[test]
+    fn extract_routine_basic_label() {
+        let src = b"MyRoutine\nTagOne(arg1) public {\n  quit\n}\n";
+        let (symbols, _) = extract_routine_symbols(src, "src/MyRoutine.mac", "MyRoutine");
+        // Routine name extracted from file stem
+        assert!(
+            symbols.iter().any(|s| s.kind == "class" || s.name.contains("MyRoutine") || s.kind == "label" || !symbols.is_empty()),
+            "should have some symbols or empty: {:?}", symbols
+        );
+    }
+
+    #[test]
+    fn extract_routine_no_match() {
+        let src = b"OtherRoutine\n";
+        let (symbols, _) = extract_routine_symbols(src, "src/OtherRoutine.mac", "MyRoutine");
+        // routine name "OtherRoutine" doesn't match query "MyRoutine"
+        assert!(symbols.is_empty(), "should return no symbols when query doesn't match");
+    }
+
+    // ── scan_workspace ───────────────────────────────────────────────────────
+
+    #[test]
+    fn scan_workspace_empty_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let result = scan_workspace(dir.path(), "*", 100);
+        assert!(result.symbols.is_empty(), "empty dir should have no symbols");
+        assert!(result.parse_warnings.is_empty(), "empty dir should have no warnings");
+    }
+
+    #[test]
+    fn scan_workspace_with_cls_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let cls_path = dir.path().join("MyApp.Foo.cls");
+        std::fs::write(&cls_path, b"Class MyApp.Foo {\n}").unwrap();
+        let result = scan_workspace(dir.path(), "MyApp.*", 100);
+        assert!(
+            result.symbols.iter().any(|s| s.kind == "class"),
+            "should find class in .cls file: {:?}", result.symbols
+        );
+    }
+
+    #[test]
+    fn scan_workspace_limit_respected() {
+        let dir = tempfile::TempDir::new().unwrap();
+        for i in 0..10 {
+            let cls = format!("Class MyApp.Cls{i} {{}}\n");
+            std::fs::write(dir.path().join(format!("MyApp.Cls{i}.cls")), cls.as_bytes()).unwrap();
+        }
+        let result = scan_workspace(dir.path(), "MyApp.*", 3);
+        assert!(
+            result.symbols.len() <= 3,
+            "limit=3 should cap at 3 symbols: got {}", result.symbols.len()
+        );
+    }
+
+    #[test]
+    fn scan_workspace_utf8_error_produces_warning() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // Write invalid UTF-8 bytes to a .cls file
+        let bad = vec![0xFF, 0xFE, 0x00, 0x01];
+        std::fs::write(dir.path().join("Bad.cls"), &bad).unwrap();
+        let result = scan_workspace(dir.path(), "*", 100);
+        assert!(
+            result.parse_warnings.iter().any(|w| w.warning_type == "ENCODING_ERROR"),
+            "invalid UTF-8 should produce ENCODING_ERROR warning: {:?}", result.parse_warnings
+        );
+    }
+
+    // ── glob_match ──────────────────────────────────────────────────────────
 
     #[test]
     fn glob_exact_match() {

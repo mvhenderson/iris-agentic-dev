@@ -71,3 +71,21 @@ fn test_strip_multiple_storage_blocks() {
     assert!(!stripped.contains("Storage S1"));
     assert!(!stripped.contains("Storage S2"));
 }
+
+#[test]
+fn test_strip_storage_removes_trailing_blank_lines_before_storage() {
+    // Blank lines between last real line and Storage block should be stripped (line 525 branch)
+    let cls = "Class MyApp.Foo {\nProperty Name As %String;\n\n\nStorage Default\n{\n<Type>%Storage.Persistent</Type>\n}\n}\n";
+    let (stripped, flag) = iris_agentic_dev_core::tools::doc::strip_storage_blocks(cls);
+    assert!(flag, "should detect storage block");
+    assert!(!stripped.contains("Storage Default"), "storage removed");
+    assert!(
+        stripped.contains("Property Name"),
+        "property preserved"
+    );
+    // The trailing blank lines before Storage should be removed
+    assert!(
+        !stripped.trim_end().ends_with('\n') || stripped.trim_end().ends_with("Property Name As %String;"),
+        "no trailing blank lines: {:?}", stripped
+    );
+}

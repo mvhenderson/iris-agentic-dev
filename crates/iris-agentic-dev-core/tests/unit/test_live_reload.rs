@@ -180,6 +180,25 @@ fn test_fr008_no_config_watcher_means_config_file_null() {
 
 // ── T036: All 4 ConnectionSource variants serialize ──────────────────────────
 
+// ── T037: check_config with disconnected IrisTools hits None branch ───────────
+
+#[cfg(feature = "testing")]
+#[tokio::test]
+async fn test_check_config_disconnected_returns_not_connected() {
+    let tools = IrisTools::new(None).unwrap();
+    let result = tools
+        .call_for_test("check_config", serde_json::json!({}))
+        .await;
+    let r = result.expect("call_for_test returned Err");
+    let text = r.content[0].raw.as_text().unwrap().text.clone();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    assert_eq!(
+        v.get("connected").and_then(|c| c.as_bool()),
+        Some(false),
+        "disconnected check_config should show connected=false: {v}"
+    );
+}
+
 #[test]
 fn test_all_connection_sources_serialize_correctly() {
     let cases = [
