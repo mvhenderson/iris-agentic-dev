@@ -52,3 +52,9 @@ fixed_query*
 src/
 tests/Test/
 .iris-dev/
+
+# Coverage and diagnostic artifacts
+.coverage
+tarpaulin-report.json
+__pycache__/
+*.pyc
