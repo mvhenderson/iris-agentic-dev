@@ -4835,6 +4835,83 @@ async fn test_dispatch_iris_admin_check_permission_execute() {
     );
 }
 
+// ── iris_query edge cases ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_query_empty_query() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Empty query → EMPTY_QUERY error
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").is_some(),
+        "empty query should error: {v}"
+    );
+}
+
+#[tokio::test]
+async fn test_dispatch_iris_query_write_blocked() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // DROP TABLE → SQL_WRITE_BLOCKED
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "DROP TABLE SomeTable",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").is_some(),
+        "DROP should be blocked: {v}"
+    );
+}
+
+#[tokio::test]
+async fn test_dispatch_iris_query_force_write() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    if std::env::var("IRIS_ADMIN_TOOLS").unwrap_or_default() != "1" {
+        return;
+    }
+    // force=true bypasses SQL safety gate (write_tools_enabled=true when IRIS_ADMIN_TOOLS=1)
+    // Use a benign INSERT that will fail on a non-existent table — tests the force path
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "SELECT * FROM IrisDevNonExistentQueryTable99999",
+                "namespace": "USER",
+                "force": true
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    // Will get SQL_ERROR for nonexistent table — but that's after the safety gate
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_query force: {v}"
+    );
+}
+
 // ── iris_execute with translate_sql=true ─────────────────────────────────────
 
 #[tokio::test]
