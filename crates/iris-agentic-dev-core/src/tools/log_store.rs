@@ -295,7 +295,10 @@ mod tests {
         // Adding a 4th evicts the first
         store.store(make_entry("id-4", "tool", serde_json::json!(4)));
         assert_eq!(store.entries.len(), 3);
-        assert!(store.entries.iter().all(|e| e.id != "id-1"), "oldest evicted");
+        assert!(
+            store.entries.iter().all(|e| e.id != "id-1"),
+            "oldest evicted"
+        );
         assert!(store.entries.iter().any(|e| e.id == "id-4"));
     }
 
@@ -507,7 +510,10 @@ mod tests {
     #[test]
     fn read_inline_threshold_returns_default_when_unset() {
         std::env::remove_var("TEST_INLINE_THRESH_UNSET_XYZ");
-        assert_eq!(read_inline_threshold("TEST_INLINE_THRESH_UNSET_XYZ", 99), 99);
+        assert_eq!(
+            read_inline_threshold("TEST_INLINE_THRESH_UNSET_XYZ", 99),
+            99
+        );
     }
 
     #[test]
