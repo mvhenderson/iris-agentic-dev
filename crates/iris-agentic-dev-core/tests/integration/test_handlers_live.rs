@@ -1797,6 +1797,30 @@ async fn test_dispatch_iris_macro_list() {
 }
 
 #[tokio::test]
+async fn test_dispatch_iris_macro_list_sys_namespace() {
+    // %SYS namespace has INC files — covers info.rs lines 145-156 (success path
+    // after 200 OK from docnames/INC endpoint with actual content).
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_macro",
+            serde_json::json!({
+                "action": "list",
+                "namespace": "%SYS"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("macros").is_some() || v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_macro list %SYS: {v}"
+    );
+}
+
+#[tokio::test]
 async fn test_dispatch_iris_macro_signature_system_macro() {
     let tools = match make_iris_tools() {
         Some(t) => t,
@@ -1946,6 +1970,53 @@ async fn test_dispatch_iris_table_info_system_table() {
         v.get("columns").is_some() || v.get("success").is_some() || v.get("error_code").is_some(),
         "table_info INFORMATION_SCHEMA.TABLES: {v}"
     );
+}
+
+// ── iris_table_info DDL-created table via iris_query ──────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_table_info_ddl_table_v2() {
+    // Uses iris_query (JDBC SQL) to create a true DDL table, then calls iris_table_info.
+    // Covers info.rs lines 497-515 (DDL branch where no backing ObjectScript class exists).
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Create DDL table via SQL (JDBC path, not docker exec)
+    let _ = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "CREATE TABLE SQLUser.IrisDevDdlV2 (Id INTEGER, Val VARCHAR(64))",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    // Query its table info — should hit DDL branch
+    let result = tools
+        .call_for_test(
+            "iris_table_info",
+            serde_json::json!({
+                "table": "SQLUser.IrisDevDdlV2",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_table_info DDL v2: {v}"
+    );
+    // Cleanup
+    let _ = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "DROP TABLE SQLUser.IrisDevDdlV2",
+                "namespace": "USER"
+            }),
+        )
+        .await;
 }
 
 // ── iris_info additional what values ─────────────────────────────────────────

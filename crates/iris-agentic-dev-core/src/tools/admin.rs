@@ -782,4 +782,19 @@ mod tests {
         assert!(text.contains("NOT_FOUND"));
         assert!(text.contains("Resource not found"));
     }
+
+    #[test]
+    fn test_iris_unreachable_error_code() {
+        let e = iris_unreachable();
+        let msg = format!("{e:?}");
+        assert!(msg.contains("IRIS_UNREACHABLE"), "iris_unreachable: {msg}");
+    }
+
+    #[test]
+    fn test_write_disabled_response() {
+        let result = write_disabled().unwrap();
+        let text = result.content[0].raw.as_text().unwrap().text.clone();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["error_code"], "ADMIN_WRITE_DISABLED");
+    }
 }

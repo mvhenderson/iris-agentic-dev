@@ -1922,4 +1922,31 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(v["error_code"], "IRIS_UNREACHABLE");
     }
+
+    // ─── helper functions ────────────────────────────────────────────────────
+
+    #[test]
+    fn iris_unreachable_returns_correct_error_code() {
+        let e = iris_unreachable();
+        // McpError::invalid_request sets code=-32600; message contains IRIS_UNREACHABLE
+        let msg = format!("{e:?}");
+        assert!(msg.contains("IRIS_UNREACHABLE"), "iris_unreachable: {msg}");
+    }
+
+    #[test]
+    fn default_timeout_returns_30() {
+        assert_eq!(default_timeout(), 30);
+    }
+
+    #[tokio::test]
+    async fn docker_required_interop_returns_docker_required_error_code() {
+        let r = docker_required_interop().unwrap();
+        let text = r.content[0].raw.as_text().unwrap().text.clone();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["error_code"], "DOCKER_REQUIRED");
+        assert!(
+            v["error"].as_str().unwrap_or("").contains("IRIS_CONTAINER"),
+            "docker_required_interop error message should mention IRIS_CONTAINER: {v}"
+        );
+    }
 }
