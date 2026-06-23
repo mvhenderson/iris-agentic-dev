@@ -492,3 +492,46 @@ fn test_read_inline_threshold_zero_returns_default() {
     assert_eq!(read_inline_threshold("IRIS_INLINE_TEST_ZERO", 20), 20);
     std::env::remove_var("IRIS_INLINE_TEST_ZERO");
 }
+
+// ── get_paginated edge cases ─────────────────────────────────────────────────
+
+#[test]
+fn test_get_paginated_expired_returns_none() {
+    // TTL=0 → all entries immediately expired → get_paginated returns None
+    let mut s = LogStore::new(10, 0);
+    let entry = make_entry("iris_compile", 5);
+    let id = s.store(entry);
+    let result = s.get_paginated(&id, None, 0);
+    assert!(result.is_none(), "get_paginated should return None for expired entry");
+}
+
+#[test]
+fn test_get_paginated_limit_none_returns_full_result() {
+    let mut s = LogStore::new(10, 60);
+    let entry = make_entry("iris_compile", 3);
+    let id = s.store(entry);
+    // limit=None → returns full result without slicing
+    let (val, has_more, total) = s.get_paginated(&id, None, 0).unwrap();
+    assert_eq!(val.as_array().unwrap().len(), 3);
+    assert!(!has_more);
+    assert_eq!(total, 3);
+}
+
+#[test]
+fn test_get_paginated_non_array_result_with_limit() {
+    // full_result is a JSON object (not array) → returns as-is even with limit=Some
+    let mut s = LogStore::new(10, 60);
+    let entry = LogEntry {
+        id: new_log_id(),
+        tool: "iris_info".to_string(),
+        created_at: std::time::Instant::now(),
+        preview: vec![],
+        full_result: json!({"status": "ok", "items": 5}),
+        total_count: 5,
+    };
+    let id = s.store(entry);
+    let (val, has_more, _) = s.get_paginated(&id, Some(2), 0).unwrap();
+    // Non-array with limit → returns full result
+    assert!(val.get("status").is_some(), "should return full object: {val}");
+    assert!(!has_more);
+}
