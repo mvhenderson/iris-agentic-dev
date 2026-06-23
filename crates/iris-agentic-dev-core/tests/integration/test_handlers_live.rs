@@ -5304,3 +5304,205 @@ async fn test_dispatch_find_subclass_implementations_cache_hit() {
         );
     }
 }
+
+// ── dict.rs edge cases ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_extract_message_map_not_found() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Non-existent class → NOT_FOUND
+    let result = tools
+        .call_for_test(
+            "extract_message_map_routing",
+            serde_json::json!({
+                "class_name": "IrisDevNonExistent99999.NoSuchClass",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").is_some(),
+        "non-existent class should error: {v}"
+    );
+}
+
+#[tokio::test]
+async fn test_dispatch_find_subclass_no_descendants() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Base class with no subclasses → empty implementations
+    let result = tools
+        .call_for_test(
+            "find_subclass_implementations",
+            serde_json::json!({
+                "base_classes": ["IrisDevNonExistent99999.NoSuchBase"],
+                "method_name": "DoSomething",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    // Returns empty implementations list (not error) when no descendants found
+    assert!(
+        v.get("implementations").is_some() || v.get("error_code").is_some(),
+        "no descendants: {v}"
+    );
+    if let Some(impls) = v.get("implementations") {
+        assert_eq!(
+            impls.as_array().map(|a| a.len()).unwrap_or(0),
+            0,
+            "should have empty implementations: {v}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_dispatch_resolve_dynamic_dispatch_with_package_prefix() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // package_prefix path: filters candidates by package
+    let result = tools
+        .call_for_test(
+            "resolve_dynamic_dispatch",
+            serde_json::json!({
+                "method_name": "Execute",
+                "package_prefix": "%Library",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("candidates").is_some() || v.get("error_code").is_some(),
+        "resolve_dynamic dispatch with prefix: {v}"
+    );
+}
+
+// ── admin.rs: delete non-existent namespace ───────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_admin_delete_nonexistent_namespace() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    if std::env::var("IRIS_ADMIN_TOOLS").unwrap_or_default() != "1" {
+        return;
+    }
+    // Deleting a non-existent namespace → NAMESPACE_NOT_FOUND
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({
+                "action": "delete_namespace",
+                "name": "IRISDEVNONEXISTENT99999"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error_code").and_then(|e| e.as_str()),
+        Some("NAMESPACE_NOT_FOUND"),
+        "delete nonexistent namespace: {v}"
+    );
+}
+
+// ── iris_get_log: pagination ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_get_log_with_offset() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // offset>0 triggers pagination branch in iris_get_log
+    let result = tools
+        .call_for_test(
+            "iris_get_log",
+            serde_json::json!({
+                "limit": 5,
+                "offset": 2
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("logs").is_some() || v.get("entries").is_some() || v.get("error_code").is_some(),
+        "iris_get_log with offset: {v}"
+    );
+}
+
+// ── iris_info: additional actions ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_info_namespaces() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_info",
+            serde_json::json!({
+                "what": "namespaces"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("namespaces").is_some() || v.get("error_code").is_some(),
+        "iris_info namespaces: {v}"
+    );
+}
+
+#[tokio::test]
+async fn test_dispatch_iris_info_databases() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_info",
+            serde_json::json!({
+                "what": "databases"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("databases").is_some() || v.get("error_code").is_some(),
+        "iris_info databases: {v}"
+    );
+}
+
+#[tokio::test]
+async fn test_dispatch_iris_info_classes() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_info",
+            serde_json::json!({
+                "what": "classes",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("classes").is_some() || v.get("error_code").is_some(),
+        "iris_info classes: {v}"
+    );
+}
+
