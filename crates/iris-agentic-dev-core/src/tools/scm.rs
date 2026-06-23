@@ -126,10 +126,13 @@ pub async fn handle_iris_source_control(
         "status" => {
             // Check if SCM is installed
             let doc_q = os_quote(doc);
-            // IsEditable() is not on the base class — only on subclasses that implement it.
-            // Wrap in try/catch so SCM implementations without this method default to editable=1.
+            // Use %Studio.SourceControl.Interface.GetStatus() — the stable public API used by
+            // ISC's own tooling. Avoids %GetImplementationObject which is undocumented and
+            // absent on some IRIS versions (reported in #61).
+            // GetStatus returns inSC (1=controlled) and editable (1=editable) by reference.
+            // Fall back to UNCONTROLLED if the Interface class itself is missing (pre-2022 IRIS).
             let check_code = format!(
-                "set obj=##class(%Studio.SourceControl.Base).%GetImplementationObject(\"{doc_q}\") if '$IsObject(obj) {{ write \"UNCONTROLLED\" }} else {{ set editable=1 try {{ set editable=obj.IsEditable(\"{doc_q}\") }} catch e {{}} write editable_\"|\"_$get(obj.Owner) }}"
+                "set scmClass=##class(%Studio.SourceControl.Interface).SourceControlClassGet() if scmClass=\"\" {{ write \"UNCONTROLLED\" }} else {{ set inSC=0 set editable=1 set tSC=##class(%Studio.SourceControl.Interface).GetStatus(\"{doc_q}\",.inSC,.editable) if 'inSC {{ write \"UNCONTROLLED\" }} else {{ if editable=\"\" {{ set editable=1 }} new %SourceControl do ##class(%Studio.SourceControl.Interface).SourceControlCreate() set owner=$select($IsObject($get(%SourceControl)):$get(%SourceControl.Owner),1:\"\") write editable_\"|\"_owner }} }}"
             );
             let out = xecute(iris, client, &check_code, ns)
                 .await
