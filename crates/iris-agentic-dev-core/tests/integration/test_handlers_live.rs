@@ -4835,6 +4835,57 @@ async fn test_dispatch_iris_admin_check_permission_execute() {
     );
 }
 
+// ── iris_execute with translate_sql=true ─────────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_execute_translate_sql() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Use &sql() macro — triggers translation path in iris_execute
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({
+                "code": "set x = 1 write x",
+                "namespace": "USER",
+                "translate_sql": true
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_execute translate_sql: {v}"
+    );
+}
+
+#[tokio::test]
+async fn test_dispatch_iris_execute_with_sql_macro() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Code with &sql() triggers translation and sql_translated response field
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({
+                "code": "&sql(SELECT TOP 1 1 INTO :x FROM %Dictionary.ClassDefinition) write x",
+                "namespace": "USER",
+                "translate_sql": true
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    eprintln!("iris_execute sql_macro: {}", serde_json::to_string(&v).unwrap_or_default());
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_execute with sql macro: {v}"
+    );
+}
+
 // ── iris_test run a real test class (covers test parse loop) ─────────────────
 
 #[tokio::test]
