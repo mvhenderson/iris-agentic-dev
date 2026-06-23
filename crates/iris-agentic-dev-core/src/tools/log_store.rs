@@ -247,3 +247,354 @@ pub fn apply_truncation(
     result["inline_count"] = Value::Number(threshold.into());
     result["total_count"] = Value::Number(total.into());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn make_entry(id: &str, tool: &str, data: Value) -> LogEntry {
+        LogEntry {
+            id: id.to_string(),
+            tool: tool.to_string(),
+            created_at: Instant::now(),
+            preview: vec![],
+            full_result: data,
+            total_count: 1,
+        }
+    }
+
+    // ── LogStore::new ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_creates_empty_store() {
+        let store = LogStore::new(100, 60);
+        assert!(store.entries.is_empty());
+        assert_eq!(store.max_entries, 100);
+        assert_eq!(store.ttl_minutes, 60);
+    }
+
+    // ── LogStore::store ───────────────────────────────────────────────────────
+
+    #[test]
+    fn store_adds_entry_and_returns_id() {
+        let mut store = LogStore::new(100, 60);
+        let entry = make_entry("test-id-1", "iris_compile", serde_json::json!({}));
+        let id = store.store(entry);
+        assert_eq!(id, "test-id-1");
+        assert_eq!(store.entries.len(), 1);
+    }
+
+    #[test]
+    fn store_evicts_oldest_at_capacity() {
+        let mut store = LogStore::new(3, 60);
+        store.store(make_entry("id-1", "tool", serde_json::json!(1)));
+        store.store(make_entry("id-2", "tool", serde_json::json!(2)));
+        store.store(make_entry("id-3", "tool", serde_json::json!(3)));
+        assert_eq!(store.entries.len(), 3);
+        // Adding a 4th evicts the first
+        store.store(make_entry("id-4", "tool", serde_json::json!(4)));
+        assert_eq!(store.entries.len(), 3);
+        assert!(store.entries.iter().all(|e| e.id != "id-1"), "oldest evicted");
+        assert!(store.entries.iter().any(|e| e.id == "id-4"));
+    }
+
+    // ── LogStore::get ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn get_returns_found_for_existing_entry() {
+        let mut store = LogStore::new(100, 60);
+        store.store(make_entry("abc", "tool", serde_json::json!({"key": "val"})));
+        match store.get("abc") {
+            GetResult::Found(v) => assert_eq!(v["key"], "val"),
+            _ => panic!("expected Found"),
+        }
+    }
+
+    #[test]
+    fn get_returns_not_found_for_missing_id() {
+        let store = LogStore::new(100, 60);
+        assert!(matches!(store.get("nonexistent"), GetResult::NotFound));
+    }
+
+    #[test]
+    fn get_returns_expired_for_ttl_exceeded() {
+        let mut store = LogStore::new(100, 60);
+        // Use TTL of 0 minutes so everything is immediately expired
+        let ttl_store = LogStore::new(100, 0);
+        // Insert manually with a past Instant
+        let id = "expire-me";
+        let entry = LogEntry {
+            id: id.to_string(),
+            tool: "tool".to_string(),
+            created_at: Instant::now() - Duration::from_secs(1),
+            preview: vec![],
+            full_result: serde_json::json!({}),
+            total_count: 0,
+        };
+        let _ = &mut store;
+        let mut zero_ttl = LogStore::new(100, 0);
+        zero_ttl.entries.push_back(entry);
+        assert!(matches!(zero_ttl.get(id), GetResult::Expired));
+    }
+
+    // ── LogStore::list ────────────────────────────────────────────────────────
+
+    #[test]
+    fn list_returns_non_expired_entries() {
+        let mut store = LogStore::new(100, 60);
+        store.store(make_entry("a", "iris_compile", serde_json::json!({})));
+        store.store(make_entry("b", "iris_search", serde_json::json!({})));
+        let summaries = store.list();
+        assert_eq!(summaries.len(), 2);
+        assert!(summaries.iter().any(|s| s.id == "a"));
+        assert!(summaries.iter().any(|s| s.id == "b"));
+    }
+
+    #[test]
+    fn list_returns_empty_for_empty_store() {
+        let mut store = LogStore::new(100, 60);
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn list_removes_expired_entries() {
+        let mut store = LogStore::new(100, 0); // TTL=0 min → all expired immediately
+        let entry = LogEntry {
+            id: "exp-list".to_string(),
+            tool: "tool".to_string(),
+            created_at: Instant::now() - Duration::from_secs(1),
+            preview: vec![],
+            full_result: serde_json::json!({}),
+            total_count: 0,
+        };
+        store.entries.push_back(entry);
+        let summaries = store.list();
+        assert!(summaries.is_empty(), "expired entries evicted from list");
+        assert!(store.entries.is_empty(), "evict_expired called by list");
+    }
+
+    // ── LogStore::evict_expired ───────────────────────────────────────────────
+
+    #[test]
+    fn evict_expired_removes_old_keeps_fresh() {
+        let mut store = LogStore::new(100, 0); // 0-minute TTL
+        let fresh = LogEntry {
+            id: "fresh".to_string(),
+            tool: "t".to_string(),
+            created_at: Instant::now() + Duration::from_secs(10), // future
+            preview: vec![],
+            full_result: serde_json::json!({}),
+            total_count: 0,
+        };
+        let expired = LogEntry {
+            id: "old".to_string(),
+            tool: "t".to_string(),
+            created_at: Instant::now() - Duration::from_secs(1),
+            preview: vec![],
+            full_result: serde_json::json!({}),
+            total_count: 0,
+        };
+        store.entries.push_back(expired);
+        store.entries.push_back(fresh);
+        store.evict_expired();
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(store.entries[0].id, "fresh");
+    }
+
+    // ── LogStore::get_paginated ───────────────────────────────────────────────
+
+    #[test]
+    fn get_paginated_no_limit_returns_all() {
+        let mut store = LogStore::new(100, 60);
+        let data = serde_json::json!([1, 2, 3, 4, 5]);
+        let entry = LogEntry {
+            id: "pag-1".to_string(),
+            tool: "t".to_string(),
+            created_at: Instant::now(),
+            preview: vec![],
+            full_result: data,
+            total_count: 5,
+        };
+        store.entries.push_back(entry);
+        let (val, has_more, total) = store.get_paginated("pag-1", None, 0).unwrap();
+        assert!(!has_more);
+        assert_eq!(total, 5);
+        assert_eq!(val.as_array().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn get_paginated_with_limit_and_offset() {
+        let mut store = LogStore::new(100, 60);
+        let data = serde_json::json!([10, 20, 30, 40, 50]);
+        let entry = LogEntry {
+            id: "pag-2".to_string(),
+            tool: "t".to_string(),
+            created_at: Instant::now(),
+            preview: vec![],
+            full_result: data,
+            total_count: 5,
+        };
+        store.entries.push_back(entry);
+        let (val, has_more, total) = store.get_paginated("pag-2", Some(2), 1).unwrap();
+        let arr = val.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0], 20);
+        assert_eq!(arr[1], 30);
+        assert!(has_more, "items 3,4 remain");
+        assert_eq!(total, 5);
+    }
+
+    #[test]
+    fn get_paginated_returns_none_for_missing_id() {
+        let store = LogStore::new(100, 60);
+        assert!(store.get_paginated("no-such-id", None, 0).is_none());
+    }
+
+    #[test]
+    fn get_paginated_returns_none_for_expired() {
+        let mut store = LogStore::new(100, 0);
+        let entry = LogEntry {
+            id: "exp-pag".to_string(),
+            tool: "t".to_string(),
+            created_at: Instant::now() - Duration::from_secs(1),
+            preview: vec![],
+            full_result: serde_json::json!([1, 2, 3]),
+            total_count: 3,
+        };
+        store.entries.push_back(entry);
+        assert!(store.get_paginated("exp-pag", None, 0).is_none());
+    }
+
+    #[test]
+    fn get_paginated_non_array_full_result_returns_whole() {
+        let mut store = LogStore::new(100, 60);
+        let data = serde_json::json!({"not": "an array"});
+        let entry = LogEntry {
+            id: "pag-obj".to_string(),
+            tool: "t".to_string(),
+            created_at: Instant::now(),
+            preview: vec![],
+            full_result: data.clone(),
+            total_count: 1,
+        };
+        store.entries.push_back(entry);
+        let (val, has_more, _) = store.get_paginated("pag-obj", Some(5), 0).unwrap();
+        assert!(!has_more);
+        assert_eq!(val, data);
+    }
+
+    // ── new_log_id ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_log_id_has_iris_prefix() {
+        let id = new_log_id();
+        assert!(id.starts_with("iris-"), "id: {id}");
+    }
+
+    #[test]
+    fn new_log_id_is_unique() {
+        let id1 = new_log_id();
+        let id2 = new_log_id();
+        assert_ne!(id1, id2);
+    }
+
+    // ── read_inline_threshold ─────────────────────────────────────────────────
+
+    #[test]
+    fn read_inline_threshold_returns_env_value() {
+        std::env::set_var("TEST_INLINE_THRESH_XYZ", "42");
+        let val = read_inline_threshold("TEST_INLINE_THRESH_XYZ", 10);
+        std::env::remove_var("TEST_INLINE_THRESH_XYZ");
+        assert_eq!(val, 42);
+    }
+
+    #[test]
+    fn read_inline_threshold_returns_default_when_unset() {
+        std::env::remove_var("TEST_INLINE_THRESH_UNSET_XYZ");
+        assert_eq!(read_inline_threshold("TEST_INLINE_THRESH_UNSET_XYZ", 99), 99);
+    }
+
+    #[test]
+    fn read_inline_threshold_returns_default_for_zero() {
+        std::env::set_var("TEST_INLINE_THRESH_ZERO", "0");
+        let val = read_inline_threshold("TEST_INLINE_THRESH_ZERO", 55);
+        std::env::remove_var("TEST_INLINE_THRESH_ZERO");
+        assert_eq!(val, 55, "zero should fall back to default");
+    }
+
+    #[test]
+    fn read_inline_threshold_returns_default_for_invalid() {
+        std::env::set_var("TEST_INLINE_THRESH_INVALID", "not-a-number");
+        let val = read_inline_threshold("TEST_INLINE_THRESH_INVALID", 7);
+        std::env::remove_var("TEST_INLINE_THRESH_INVALID");
+        assert_eq!(val, 7);
+    }
+
+    // ── apply_truncation ──────────────────────────────────────────────────────
+
+    #[test]
+    fn apply_truncation_inline_mode_adds_truncated_false() {
+        let store = Arc::new(Mutex::new(LogStore::new(100, 60)));
+        let mut result = serde_json::json!({"items": [1, 2, 3, 4, 5]});
+        apply_truncation(&mut result, "items", 3, true, &store, "tool");
+        assert_eq!(result["truncated"], false);
+        // inline=true: no log_id added
+        assert!(result.get("log_id").is_none());
+    }
+
+    #[test]
+    fn apply_truncation_no_key_does_nothing() {
+        let store = Arc::new(Mutex::new(LogStore::new(100, 60)));
+        let mut result = serde_json::json!({"other_key": [1, 2, 3]});
+        apply_truncation(&mut result, "items", 2, false, &store, "tool");
+        // No items key → nothing added
+        assert!(result.get("truncated").is_none());
+    }
+
+    #[test]
+    fn apply_truncation_below_threshold_adds_truncated_false() {
+        let store = Arc::new(Mutex::new(LogStore::new(100, 60)));
+        let mut result = serde_json::json!({"items": [1, 2]});
+        apply_truncation(&mut result, "items", 5, false, &store, "tool");
+        assert_eq!(result["truncated"], false);
+        assert!(result.get("log_id").is_none());
+    }
+
+    #[test]
+    fn apply_truncation_above_threshold_stores_and_truncates() {
+        let store = Arc::new(Mutex::new(LogStore::new(100, 60)));
+        let mut result = serde_json::json!({"items": [1, 2, 3, 4, 5]});
+        apply_truncation(&mut result, "items", 2, false, &store, "iris_search");
+        assert_eq!(result["truncated"], true);
+        assert_eq!(result["inline_count"], 2);
+        assert_eq!(result["total_count"], 5);
+        let log_id = result["log_id"].as_str().expect("log_id set");
+        assert!(!log_id.is_empty());
+        // Items array truncated to 2
+        assert_eq!(result["items"].as_array().unwrap().len(), 2);
+        // Full result stored in log store
+        let s = store.lock().unwrap();
+        match s.get(log_id) {
+            GetResult::Found(v) => {
+                let arr = v.as_array().unwrap();
+                assert_eq!(arr.len(), 5);
+            }
+            _ => panic!("expected full result in store"),
+        }
+    }
+
+    // ── instant_to_iso (via list summaries) ──────────────────────────────────
+
+    #[test]
+    fn list_summary_created_at_is_iso_format() {
+        let mut store = LogStore::new(100, 60);
+        store.store(make_entry("ts-test", "tool", serde_json::json!({})));
+        let summaries = store.list();
+        assert_eq!(summaries.len(), 1);
+        let ts = &summaries[0].created_at;
+        // Should be ISO 8601: "2026-06-23T20:00:00Z" format
+        assert!(ts.contains('T'), "timestamp: {ts}");
+        assert!(ts.ends_with('Z'), "timestamp: {ts}");
+    }
+}
