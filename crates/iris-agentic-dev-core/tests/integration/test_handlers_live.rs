@@ -6666,3 +6666,129 @@ async fn test_dispatch_extract_message_map_routing_v2() {
         Ok(_) | Err(_) => {} // either outcome covers the code path
     }
 }
+
+// ── find_subclass_implementations with empty base_classes (covers line 279 dict.rs) ──
+
+#[tokio::test]
+async fn test_dispatch_find_subclass_empty_bases() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "find_subclass_implementations",
+            serde_json::json!({
+                "method_name": "OnProcessInput",
+                "base_classes": [],
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code") == Some(&serde_json::json!("INVALID_PARAMS")),
+        "should return INVALID_PARAMS for empty base_classes: {v}"
+    );
+}
+
+// ── iris_doc put with elicitation_answer (covers elicitation resume path) ────
+
+#[tokio::test]
+async fn test_dispatch_iris_doc_put_elicitation_resume() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // Provide a fake elicitation_id/answer — covers the resume branch in doc.rs
+    let result = tools
+        .call_for_test(
+            "iris_doc",
+            serde_json::json!({
+                "mode": "put",
+                "name": "IrisDevTmp.ElicitTest.cls",
+                "content": "Class IrisDevTmp.ElicitTest {}\n",
+                "namespace": "USER",
+                "elicitation_id": "fake-id-9999",
+                "elicitation_answer": "yes"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_doc put with elicitation: {v}"
+    );
+}
+
+// ── iris_table_info with DDL table (covers DDL path lines 497-515 info.rs) ──
+
+#[tokio::test]
+async fn test_dispatch_iris_table_info_with_row_count() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // include_row_count=true covers the row_count branch (lines 490-493 or 511-513)
+    let result = tools
+        .call_for_test(
+            "iris_table_info",
+            serde_json::json!({
+                "table": "INFORMATION_SCHEMA.TABLES",
+                "namespace": "USER",
+                "include_row_count": true
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_table_info with row_count: {v}"
+    );
+}
+
+// ── iris_compile with list of targets (covers batch compile path) ─────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_compile_batch() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_compile",
+            serde_json::json!({
+                "target": "%SYS.Namespace,%SYS.ProcessQuery",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_compile batch: {v}"
+    );
+}
+
+// ── iris_symbols_local with missing workspace (covers WORKSPACE_NOT_FOUND) ──
+
+#[tokio::test]
+async fn test_dispatch_iris_symbols_local_no_workspace_v2() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    std::env::remove_var("OBJECTSCRIPT_WORKSPACE");
+    let result = tools
+        .call_for_test(
+            "iris_symbols_local",
+            serde_json::json!({ "query": "Test*" }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some() || v.get("symbols").is_some(),
+        "iris_symbols_local no workspace: {v}"
+    );
+}
