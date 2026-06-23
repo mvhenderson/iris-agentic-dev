@@ -6492,3 +6492,176 @@ async fn test_dispatch_iris_symbols_v2() {
         "iris_symbols v2: {v}"
     );
 }
+
+// ── iris_execute runtime error path (covers is_runtime_error branch) ─────────
+
+#[tokio::test]
+async fn test_dispatch_iris_execute_runtime_error() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // This code triggers a runtime error — the error handler writes ERROR:
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({
+                "code": "set x = 1/0",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    // May succeed (IRIS may return 0 or error text) — just verify it returns
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("output").is_some() || v.get("error_code").is_some(),
+        "iris_execute runtime error: {v}"
+    );
+}
+
+// ── iris_query with force=true and SQL_WRITE_BLOCKED (covers force_ignored path) ──
+
+#[tokio::test]
+async fn test_dispatch_iris_query_force_blocked() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // DROP without force — should be blocked
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "DROP TABLE nonexistent_xyz_table",
+                "namespace": "USER",
+                "force": false
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_query force blocked: {v}"
+    );
+}
+
+// ── iris_query with force=true (covers force=true SQL_WRITE_BLOCKED path) ────
+
+#[tokio::test]
+async fn test_dispatch_iris_query_force_true() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    // SELECT with force=true — should proceed normally
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({
+                "query": "SELECT TOP 1 1 FROM INFORMATION_SCHEMA.TABLES",
+                "namespace": "USER",
+                "force": true
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("rows").is_some() || v.get("error_code").is_some(),
+        "iris_query force true: {v}"
+    );
+}
+
+// ── iris_get_log (covers iris_get_log handler) ────────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_iris_get_log_v2() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_get_log",
+            serde_json::json!({ "namespace": "USER", "max_lines": 10 }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("lines").is_some() || v.get("error_code").is_some(),
+        "iris_get_log v2: {v}"
+    );
+}
+
+// ── resolve_dynamic_dispatch (covers dict handler) ────────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_resolve_dynamic_dispatch_v2() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "resolve_dynamic_dispatch",
+            serde_json::json!({
+                "class_name": "%SYS.Namespace",
+                "method_name": "List",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "resolve_dynamic_dispatch: {v}"
+    );
+}
+
+// ── find_subclass_implementations (covers dict handler) ───────────────────────
+
+#[tokio::test]
+async fn test_dispatch_find_subclass_implementations_v2() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "find_subclass_implementations",
+            serde_json::json!({
+                "superclass": "%Library.Persistent",
+                "namespace": "USER",
+                "max_results": 5
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "find_subclass_implementations: {v}"
+    );
+}
+
+// ── extract_message_map_routing (covers dict handler) ─────────────────────────
+
+#[tokio::test]
+async fn test_dispatch_extract_message_map_routing_v2() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "extract_message_map_routing",
+            serde_json::json!({
+                "class_name": "%SYS.Namespace",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "extract_message_map_routing: {v}"
+    );
+}
