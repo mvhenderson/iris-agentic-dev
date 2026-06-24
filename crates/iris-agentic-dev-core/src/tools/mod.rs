@@ -6226,6 +6226,9 @@ impl IrisTools {
         );
         dispatch!("iris_generate_test", GenerateTestParams, iris_generate_test);
         dispatch_any!("iris_containers", iris_containers);
+        dispatch!("skill_propose", NoParams, skill_propose);
+        dispatch!("skill_optimize", SkillNameParams, skill_optimize);
+        dispatch!("skill_share", SkillNameParams, skill_share);
         Err(format!("unknown tool: {tool}"))
     }
 }

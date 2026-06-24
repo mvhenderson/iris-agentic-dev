@@ -394,7 +394,7 @@ impl IrisConnection {
             "  Set stream = ##class(%Stream.FileCharacter).%New()".into(),
             "  Set sc = stream.LinkToFile(tmpfile)".into(),
             "  If $$$ISOK(sc) {".into(),
-            "    While 'stream.AtEnd { Set out = out_stream.ReadLine()_$Char(10) }".into(),
+            "    While 'stream.AtEnd { Set out = out _ stream.ReadLine() _ $Char(10) }".into(),
             "  }".into(),
             "  Do ##class(%Library.File).Delete(tmpfile)".into(),
             "  Set qout = $Replace($Replace(out,$Char(34),$Char(34)_$Char(34)),$Char(10),$Char(1))"

@@ -1561,6 +1561,31 @@ async fn test_dispatch_iris_execute_error_code() {
     );
 }
 
+// Regression test for issue #55: execute_via_generator was reading from `out_stream`
+// (undefined variable) instead of `stream`, causing output to always be empty.
+#[tokio::test]
+async fn test_dispatch_iris_execute_write_output_nonempty() {
+    let tools = match make_iris_tools() {
+        Some(t) => t,
+        None => return,
+    };
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({
+                "code": "Write \"hello\",!",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    let output = v.get("output").and_then(|o| o.as_str()).unwrap_or_default();
+    assert!(
+        output.contains("hello"),
+        "issue #55 regression: expected 'hello' in output, got empty (stream variable typo); output={output:?}"
+    );
+}
+
 // ── iris_query edge cases ─────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -14367,6 +14392,63 @@ async fn test_iris_doc_get_http_error_via_wiremock() {
     }
     let v = parse_result(result);
     assert!(v.get("error_code").is_some(), "iris_doc 500 error: {v}");
+}
+
+// Covers doc.rs lines 144 (HTTP non-success in batch loop) and 147 (Err in batch loop).
+#[tokio::test]
+async fn test_iris_doc_batch_get_http_error_via_wiremock() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    // First doc: 500 → hits line 144 (Ok(resp) non-success branch)
+    Mock::given(method("GET"))
+        .and(path_regex("/api/atelier/v1/.*/doc/ErrorClass\\.cls"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    // Second doc: 200 success
+    Mock::given(method("GET"))
+        .and(path_regex("/api/atelier/v1/.*/doc/.*"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"result":{"content":["Class GoodClass {}"]}})),
+        )
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_doc",
+            serde_json::json!({
+                "mode": "get",
+                "names": ["ErrorClass.cls", "GoodClass.cls"],
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("documents").is_some(),
+        "iris_doc batch get with 500: {v}"
+    );
+}
+
+// Covers mod.rs line 1024: iris_unreachable() via get_iris() with no connection.
+#[tokio::test]
+async fn test_iris_execute_no_connection_unreachable() {
+    let tools = iris_agentic_dev_core::tools::IrisTools::new(None).expect("IrisTools::new(None)");
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({"code": "Write 1", "namespace": "USER"}),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "should error with no connection: {result:?}"
+    );
 }
 
 // Covers admin.rs lines 39, 80, 123, 175, 220, 296, 331, 377, 428, 474, 532, 572, 612, 652, 694:
