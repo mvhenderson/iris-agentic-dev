@@ -223,9 +223,16 @@ pub fn init_platform_keystore() {
     let _ = keyring::Entry::new("_init_", "_init_");
 }
 
+/// IDE host service names used by Server Manager variants when storing keychain entries.
+///
+/// VS Code proper, VS Code Insiders, Cursor, and Windsurf each register a different
+/// service name. We probe in this order; first hit wins. The account key format is
+/// identical across all IDEs.
+const IDE_SERVICE_NAMES: &[&str] = &["vscode", "cursor", "windsurf", "vscode-insiders"];
+
 /// Resolve a Server Manager credential from the OS keychain.
 ///
-/// Uses the key format: service=`"vscode"`, account=`"credentialProvider:<name>/<user_lower>"`.
+/// Probes `IDE_SERVICE_NAMES` in order (vscode, cursor, windsurf, vscode-insiders).
 /// Uses `keyring_core::Entry` directly so tests can inject a mock store via
 /// `keyring_core::set_default_store` without conflicting with the `keyring::v1` `Once` guard.
 ///
@@ -238,27 +245,43 @@ pub fn resolve_credential(server_name: &str, username: &str) -> Result<String, S
         server_name,
         username.to_lowercase()
     );
-    // Use keyring_core::Entry directly so mock store injection works in tests.
-    let entry =
-        keyring_core::Entry::new("vscode", &account).map_err(|e: keyring_core::Error| {
-            SmCredentialError::KeychainError {
-                server_name: server_name.to_string(),
-                detail: e.to_string(),
-            }
-        })?;
 
-    match entry.get_password() {
-        Ok(pw) => Ok(pw),
-        Err(keyring_core::Error::NoEntry) => Err(SmCredentialError::CredentialNotFound {
-            server_name: server_name.to_string(),
-        }),
-        Err(_) => {
-            // NoStorageAccess covers headless Linux without a keychain daemon
-            Err(SmCredentialError::CredentialNotFound {
-                server_name: server_name.to_string(),
-            })
+    for &service in IDE_SERVICE_NAMES {
+        // Use keyring_core::Entry directly so mock store injection works in tests.
+        let entry = match keyring_core::Entry::new(service, &account) {
+            Ok(e) => e,
+            Err(e) => {
+                return Err(SmCredentialError::KeychainError {
+                    server_name: server_name.to_string(),
+                    detail: e.to_string(),
+                });
+            }
+        };
+
+        match entry.get_password() {
+            Ok(pw) => {
+                tracing::debug!(
+                    "SM credential resolved for '{server_name}' via service '{service}'"
+                );
+                return Ok(pw);
+            }
+            Err(keyring_core::Error::NoEntry) => {
+                // Try the next service name
+                tracing::debug!(
+                    "SM: no entry for '{server_name}' under service '{service}', trying next"
+                );
+                continue;
+            }
+            Err(_) => {
+                // NoStorageAccess (headless Linux, locked keychain, etc.) — stop probing
+                break;
+            }
         }
     }
+
+    Err(SmCredentialError::CredentialNotFound {
+        server_name: server_name.to_string(),
+    })
 }
 
 // ── check_config helpers ──────────────────────────────────────────────────────

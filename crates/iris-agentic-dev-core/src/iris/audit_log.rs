@@ -68,9 +68,12 @@ impl AuditLog {
             std::fs::create_dir_all(parent)?;
         }
 
-        let line = serde_json::to_string(entry)
-            .map_err(std::io::Error::other)?;
+        let line = serde_json::to_string(entry).map_err(std::io::Error::other)?;
 
+        // O_APPEND is atomic on macOS and Windows for small writes (< PIPE_BUF).
+        // On Linux, concurrent open-append-close from two MCP clients (e.g. Claude Desktop
+        // + Cursor) can interleave; entries remain valid JSON lines but ordering may be
+        // non-deterministic. This is acceptable for an audit log — correctness over ordering.
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .create(true)

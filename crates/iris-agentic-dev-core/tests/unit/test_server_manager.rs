@@ -273,5 +273,86 @@ fn check_config_sm_latency_when_not_installed() {
     );
 }
 
+// ── Multi-IDE service name probe tests ─────────────────────────────────────
+// These tests touch the global mock store and must run serially via STORE_LOCK.
+
+static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn with_isolated_mock_store<F: FnOnce()>(f: F) {
+    let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap());
+    f();
+    keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap());
+}
+
+#[test]
+fn resolve_credential_cursor_service_name() {
+    with_isolated_mock_store(|| {
+        // Seed under "cursor" service only — simulates Cursor IDE SM extension
+        let entry =
+            keyring_core::Entry::new("cursor", "credentialProvider:dev-local/_system").unwrap();
+        entry.set_password("cursor-password").unwrap();
+
+        let result = resolve_credential("dev-local", "_SYSTEM");
+        assert!(
+            result.is_ok(),
+            "credential stored under 'cursor' service must resolve: {result:?}"
+        );
+        assert_eq!(result.unwrap(), "cursor-password");
+    });
+}
+
+#[test]
+fn resolve_credential_windsurf_service_name() {
+    with_isolated_mock_store(|| {
+        // Seed under "windsurf" service only — simulates Windsurf IDE SM extension
+        let entry =
+            keyring_core::Entry::new("windsurf", "credentialProvider:dev-local/_system").unwrap();
+        entry.set_password("windsurf-password").unwrap();
+
+        let result = resolve_credential("dev-local", "_SYSTEM");
+        assert!(
+            result.is_ok(),
+            "credential stored under 'windsurf' service must resolve: {result:?}"
+        );
+        assert_eq!(result.unwrap(), "windsurf-password");
+    });
+}
+
+#[test]
+fn resolve_credential_vscode_insiders_service_name() {
+    with_isolated_mock_store(|| {
+        // Seed under "vscode-insiders" only — last in probe order
+        let entry =
+            keyring_core::Entry::new("vscode-insiders", "credentialProvider:dev-local/_system")
+                .unwrap();
+        entry.set_password("insiders-password").unwrap();
+
+        let result = resolve_credential("dev-local", "_SYSTEM");
+        assert!(
+            result.is_ok(),
+            "credential stored under 'vscode-insiders' service must resolve: {result:?}"
+        );
+        assert_eq!(result.unwrap(), "insiders-password");
+    });
+}
+
+#[test]
+fn resolve_credential_vscode_wins_over_cursor_when_both_present() {
+    with_isolated_mock_store(|| {
+        // Both seeded — vscode is first in IDE_SERVICE_NAMES probe order
+        let vscode =
+            keyring_core::Entry::new("vscode", "credentialProvider:dev-local/_system").unwrap();
+        vscode.set_password("vscode-password").unwrap();
+        let cursor =
+            keyring_core::Entry::new("cursor", "credentialProvider:dev-local/_system").unwrap();
+        cursor.set_password("cursor-password").unwrap();
+
+        let result = resolve_credential("dev-local", "_SYSTEM");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "vscode-password", "vscode probed first");
+    });
+}
+
 // Serialize env-var–touching tests
 static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
