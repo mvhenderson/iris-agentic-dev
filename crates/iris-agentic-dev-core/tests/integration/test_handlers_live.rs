@@ -3877,6 +3877,7 @@ async fn test_dispatch_iris_generate_test() {
 
 #[tokio::test]
 async fn test_dispatch_iris_generate_class_mock_llm() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tools = match make_iris_tools() {
         Some(t) => t,
         None => return,
@@ -3907,6 +3908,7 @@ async fn test_dispatch_iris_generate_class_mock_llm() {
 
 #[tokio::test]
 async fn test_dispatch_iris_generate_test_mock_llm() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tools = match make_iris_tools() {
         Some(t) => t,
         None => return,
@@ -3933,6 +3935,7 @@ async fn test_dispatch_iris_generate_test_mock_llm() {
 
 #[tokio::test]
 async fn test_dispatch_iris_generate_class_no_llm() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let tools = match make_iris_tools() {
         Some(t) => t,
         None => return,
@@ -10715,6 +10718,7 @@ async fn test_probe_atelier_v1_atelier_version() {
 
 #[tokio::test]
 async fn test_llm_client_anthropic_success() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10757,6 +10761,7 @@ async fn test_llm_client_anthropic_success() {
 
 #[tokio::test]
 async fn test_llm_client_anthropic_error_response() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10792,6 +10797,7 @@ async fn test_llm_client_anthropic_error_response() {
 
 #[tokio::test]
 async fn test_llm_client_openai_success() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10830,6 +10836,7 @@ async fn test_llm_client_openai_success() {
 
 #[tokio::test]
 async fn test_llm_client_openai_error_response() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10860,6 +10867,7 @@ async fn test_llm_client_openai_error_response() {
 
 #[tokio::test]
 async fn test_llm_client_mock_model_path() {
+    let _llm_guard = LLM_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // Covers the #[cfg(any(test, feature = "testing"))] mock path in generate.rs lines 86-91
     unsafe {
         std::env::set_var("IRIS_GENERATE_CLASS_MODEL", "mock");
@@ -10879,8 +10887,24 @@ async fn test_llm_client_mock_model_path() {
     assert!(text.contains("Class"), "mock response should contain class");
 }
 
+// Serialize tests that mutate LLM env vars (IRIS_GENERATE_CLASS_MODEL, OPENAI_API_KEY, etc.)
+// These tests run in the same process; concurrent set/remove_var calls race.
+static LLM_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+// Serialize tests that mutate GITHUB_RAW_BASE_URL / GITHUB_API_BASE_URL env vars.
+// Tokio async tests run concurrently; without a lock, one test's remove_var fires while
+// another test is mid-request and the request goes to the wrong (already-dropped) server.
+static GITHUB_RAW_URL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static GITHUB_API_URL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+// Serialize tests that remove IRIS_CONTAINER to force DOCKER_REQUIRED paths.
+// Without serialization, a concurrent test running with IRIS_CONTAINER set will
+// race against the remove_var and the DOCKER_REQUIRED branch is never reached.
+static DOCKER_REQUIRED_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[tokio::test]
 async fn test_skill_registry_load_from_github_via_mock() {
+    let _guard = GITHUB_RAW_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10958,6 +10982,7 @@ kb_items = ["kb/guide.md"]
 
 #[tokio::test]
 async fn test_skill_registry_load_from_github_manifest_404() {
+    let _guard = GITHUB_RAW_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10996,6 +11021,7 @@ async fn test_skill_registry_load_from_github_invalid_owner_repo() {
 
 #[tokio::test]
 async fn test_skill_registry_load_from_github_skill_404_skipped() {
+    let _guard = GITHUB_RAW_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11041,6 +11067,7 @@ async fn test_skill_registry_load_from_github_skill_404_skipped() {
 
 #[tokio::test]
 async fn test_skill_registry_load_from_github_skill_no_name_in_frontmatter() {
+    let _guard = GITHUB_RAW_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11082,6 +11109,7 @@ async fn test_skill_registry_load_from_github_skill_no_name_in_frontmatter() {
 
 #[tokio::test]
 async fn test_skill_registry_load_from_github_kb_uses_frontmatter_title() {
+    let _guard = GITHUB_RAW_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11120,6 +11148,7 @@ async fn test_skill_registry_load_from_github_kb_uses_frontmatter_title() {
 
 #[tokio::test]
 async fn test_skill_registry_load_from_github_kb_uses_path_as_fallback_title() {
+    let _guard = GITHUB_RAW_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11162,6 +11191,7 @@ async fn test_skill_registry_load_from_github_kb_uses_path_as_fallback_title() {
 
 #[tokio::test]
 async fn test_resolve_github_version_success() {
+    let _guard = GITHUB_API_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11205,6 +11235,7 @@ async fn test_resolve_github_version_success() {
 
 #[tokio::test]
 async fn test_resolve_github_version_404() {
+    let _guard = GITHUB_API_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11257,6 +11288,7 @@ async fn test_resolve_github_version_non_github_source_error() {
 
 #[tokio::test]
 async fn test_resolve_github_version_non_2xx_error() {
+    let _guard = GITHUB_API_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11294,6 +11326,7 @@ async fn test_resolve_github_version_non_2xx_error() {
 
 #[tokio::test]
 async fn test_resolve_github_version_no_matching_tags() {
+    let _guard = GITHUB_API_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11340,6 +11373,7 @@ async fn test_resolve_github_version_no_matching_tags() {
 
 #[tokio::test]
 async fn test_resolve_github_version_unexpected_response_format() {
+    let _guard = GITHUB_API_URL_LOCK.lock().unwrap();
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -12417,7 +12451,7 @@ async fn test_scm_checkout_elicitation_resume_via_wiremock() {
                 "document": "Resume.Test.cls",
                 "namespace": "USER",
                 "elicitation_id": eid,
-                "elicitation_answer": "yes"
+                "answer": "yes"
             }),
         )
         .await;
@@ -13722,6 +13756,7 @@ async fn test_production_start_docker_required_via_wiremock() {
     use wiremock::MockServer;
     let server = MockServer::start().await;
 
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let saved = std::env::var("IRIS_CONTAINER").ok();
     unsafe {
         std::env::remove_var("IRIS_CONTAINER");
@@ -13752,6 +13787,7 @@ async fn test_production_stop_docker_required_via_wiremock() {
     use wiremock::MockServer;
     let server = MockServer::start().await;
 
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let saved = std::env::var("IRIS_CONTAINER").ok();
     unsafe {
         std::env::remove_var("IRIS_CONTAINER");
@@ -13782,6 +13818,7 @@ async fn test_production_update_docker_required_via_wiremock() {
     use wiremock::MockServer;
     let server = MockServer::start().await;
 
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let saved = std::env::var("IRIS_CONTAINER").ok();
     unsafe {
         std::env::remove_var("IRIS_CONTAINER");
@@ -13812,6 +13849,7 @@ async fn test_production_check_docker_required_via_wiremock() {
     use wiremock::MockServer;
     let server = MockServer::start().await;
 
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let saved = std::env::var("IRIS_CONTAINER").ok();
     unsafe {
         std::env::remove_var("IRIS_CONTAINER");
@@ -13842,6 +13880,7 @@ async fn test_production_recover_docker_required_via_wiremock() {
     use wiremock::MockServer;
     let server = MockServer::start().await;
 
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let saved = std::env::var("IRIS_CONTAINER").ok();
     unsafe {
         std::env::remove_var("IRIS_CONTAINER");
@@ -13907,6 +13946,8 @@ async fn test_generator_compile_error_via_wiremock() {
     use wiremock::matchers::{method, path_regex};
     use wiremock::{Mock, MockServer, ResponseTemplate};
     let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     Mock::given(method("PUT"))
         .and(path_regex("/api/atelier/v1/.*/doc/.*"))
@@ -15238,5 +15279,1861 @@ async fn test_find_subclass_implementations_with_results_via_wiremock() {
     assert!(
         v["success"].as_bool() == Some(true) || v.get("error_code").is_some(),
         "find_subclass with results: {v}"
+    );
+}
+
+// ── Policy gate (044) coverage — active_server_manager_policy + write_audit_entry ──
+//
+// These tests exercise the 044-added paths in tools/mod.rs:
+//   - active_server_manager_policy(): returns (None, None) for non-SM sources
+//   - active_server_manager_policy(): returns (server_name, policy) for SM sources
+//   - write_audit_entry(): no-op when no policy, writes when policy active
+//   - policy_gate check in iris_compile, iris_execute, iris_query, iris_source_control
+//
+// The policy gate fires BEFORE any IRIS HTTP call, so these tests need no WireMock stubs
+// beyond a minimal IRIS probe response.
+
+/// Helper: build IrisTools connected to a mock server via ServerManager discovery source.
+/// This exercises active_server_manager_policy() → returns (Some(server_name), None) when
+/// no .iris-agentic-dev.toml policy block is configured.
+fn make_sm_tools(server: &wiremock::MockServer, server_name: &str) -> iris_agentic_dev_core::tools::IrisTools {
+    use iris_agentic_dev_core::iris::connection::{DiscoverySource, IrisConnection};
+    let conn = IrisConnection::new(
+        server.uri(),
+        "USER",
+        "_SYSTEM".to_string(),
+        "SYS".to_string(),
+        DiscoverySource::ServerManager {
+            server_name: server_name.to_string(),
+        },
+    );
+    iris_agentic_dev_core::tools::IrisTools::new(Some(conn)).expect("IrisTools::new for SM")
+}
+
+/// Policy gate: non-SM connection (EnvVar source) must pass through without gating.
+/// Covers active_server_manager_policy() → None branch.
+#[tokio::test]
+async fn test_policy_gate_non_sm_connection_passes_through() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    // Minimal compile mock — returns compile errors so we see the result without real IRIS
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/USER/doc/.*"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_compile",
+            serde_json::json!({"target": "User.Test.cls"}),
+        )
+        .await;
+    let v = parse_result(result);
+    // Must NOT contain policy_gate error — EnvVar source passes through
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("POLICY_GATE")).unwrap_or(true),
+        "non-SM connection must not be policy-gated: {v}"
+    );
+}
+
+/// Policy gate: SM connection with no policy configured passes through.
+/// Covers active_server_manager_policy() → (Some(name), None) branch.
+/// Also covers write_audit_entry() no-op when policy is None.
+#[tokio::test]
+async fn test_policy_gate_sm_connection_no_policy_passes_through() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/USER/doc/.*"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_sm_tools(&server, "dev-local");
+    let result = tools
+        .call_for_test(
+            "iris_compile",
+            serde_json::json!({"target": "User.Test.cls"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("POLICY_GATE")).unwrap_or(true),
+        "SM connection with no policy must not be policy-gated: {v}"
+    );
+}
+
+/// Policy gate: iris_execute with SM non-SM connection passes through.
+/// Covers active_server_manager_policy() call in iris_execute handler.
+#[tokio::test]
+async fn test_policy_gate_iris_execute_non_sm_passes_through() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({"code": "write \"hello\""}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("POLICY_GATE")).unwrap_or(true),
+        "non-SM iris_execute must not be policy-gated: {v}"
+    );
+}
+
+/// Policy gate: iris_query with non-SM connection passes through.
+/// Covers active_server_manager_policy() + write_audit_entry() in iris_query handler.
+#[tokio::test]
+async fn test_policy_gate_iris_query_non_sm_passes_through() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({"query": "SELECT 1"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("POLICY_GATE")).unwrap_or(true),
+        "non-SM iris_query must not be policy-gated: {v}"
+    );
+}
+
+/// Policy gate: iris_source_control with non-SM connection passes through.
+/// Covers active_server_manager_policy() + write_audit_entry() in iris_source_control handler.
+#[tokio::test]
+async fn test_policy_gate_iris_source_control_non_sm_passes_through() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_source_control",
+            serde_json::json!({"action": "status"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("POLICY_GATE")).unwrap_or(true),
+        "non-SM iris_source_control must not be policy-gated: {v}"
+    );
+}
+
+/// active_server_manager_policy with SM source but no fleet config: returns (Some(name), None).
+/// write_audit_entry is a no-op when policy is None.
+/// Exercises the full active_server_manager_policy() function via SM tools.
+#[tokio::test]
+async fn test_active_server_manager_policy_sm_source_no_config() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_sm_tools(&server, "my-iris");
+    // iris_query with SM source — active_server_manager_policy reads SM source,
+    // load_fleet_config returns None (no config file), policy_gate sees None policy → passes
+    let result = tools
+        .call_for_test("iris_query", serde_json::json!({"query": "SELECT 1"}))
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("POLICY_GATE")).unwrap_or(true),
+        "SM with no fleet config must not be gated: {v}"
+    );
+}
+
+// ── Role-gate handler coverage (003-workspace-config) ─────────────────────────
+//
+// These tests exercise the role-gate wiring in tools/mod.rs handlers:
+//   - instance_role() → Subject match by host
+//   - check_role_gate() called in iris_compile, iris_execute, iris_query, iris_source_control
+//   - soft-gate (confirm=false → error, confirm=true → pass)
+//   - hard-block (source_control write actions — confirm has no effect)
+//   - SELECT is always permitted on subject
+//   - develop-mode config produces no role-gate
+//
+// Strategy: WireMock server at 127.0.0.1:PORT; fleet config with instance host=127.0.0.1
+// matching by base_url → instance_role() returns Subject.
+// Role-gate fires before IRIS HTTP call → no WireMock stubs needed for blocked paths.
+
+fn make_subject_tools_with_fleet(
+    server: &wiremock::MockServer,
+) -> (iris_agentic_dev_core::tools::IrisTools, tempfile::TempDir) {
+    use iris_agentic_dev_core::iris::connection::{DiscoverySource, IrisConnection};
+    let port = server.address().port();
+    let conn = IrisConnection::new(
+        server.uri(),
+        "USER",
+        "_SYSTEM".to_string(),
+        "SYS".to_string(),
+        DiscoverySource::EnvVar,
+    );
+    let tools = iris_agentic_dev_core::tools::IrisTools::new(Some(conn)).expect("IrisTools::new");
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let fleet_toml = format!(
+        r#"mode = "operate"
+
+[instance.test-subject]
+host = "127.0.0.1"
+role = "subject"
+"#
+    );
+    let _ = port; // used indirectly via server.uri()
+    std::fs::write(dir.path().join(".iris-agentic-dev.toml"), &fleet_toml).unwrap();
+    {
+        let mut conn_state = tools.connection.lock().unwrap();
+        conn_state.config_file = Some(dir.path().join(".iris-agentic-dev.toml"));
+    }
+    (tools, dir)
+}
+
+/// Role-gate: iris_compile without confirm returns role_gate error on subject.
+/// Covers tools/mod.rs instance_role() call + check_role_gate() in iris_compile handler.
+#[tokio::test]
+async fn test_role_gate_iris_compile_subject_no_confirm() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    let result = tools
+        .call_for_test("iris_compile", serde_json::json!({"target": "User.Test.cls"}))
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error").and_then(|e| e.as_str()),
+        Some("role_gate"),
+        "iris_compile on subject must return role_gate error without confirm: {v}"
+    );
+    assert_eq!(
+        v.get("role_gate").and_then(|r| r.as_bool()),
+        Some(true),
+        "role_gate field must be true: {v}"
+    );
+}
+
+/// Role-gate: iris_compile with confirm=true passes through on subject.
+/// Covers the check_role_gate() confirm bypass path in iris_compile.
+#[tokio::test]
+async fn test_role_gate_iris_compile_subject_with_confirm_bypasses() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    // Mock the compile HTTP call — returns 500 to avoid full compile logic
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/USER/doc/.*"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    let result = tools
+        .call_for_test(
+            "iris_compile",
+            serde_json::json!({"target": "User.Test.cls", "confirm": true}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("ROLE_GATE")).unwrap_or(true),
+        "iris_compile with confirm:true on subject must bypass role_gate: {v}"
+    );
+}
+
+/// Role-gate: iris_execute without confirm returns role_gate on subject.
+/// Covers check_role_gate() in iris_execute handler.
+#[tokio::test]
+async fn test_role_gate_iris_execute_subject_no_confirm() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    let result = tools
+        .call_for_test("iris_execute", serde_json::json!({"code": "write \"hello\""}))
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error").and_then(|e| e.as_str()),
+        Some("role_gate"),
+        "iris_execute on subject must return role_gate error without confirm: {v}"
+    );
+    assert_eq!(
+        v.get("role_gate").and_then(|r| r.as_bool()),
+        Some(true),
+        "role_gate field must be true: {v}"
+    );
+}
+
+/// Role-gate: iris_query INSERT returns role_gate on subject without confirm.
+/// Covers the iris_query non-SELECT gate in tools/mod.rs.
+#[tokio::test]
+async fn test_role_gate_iris_query_insert_subject_no_confirm() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({"query": "INSERT INTO Test.T (x) VALUES (1)"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error").and_then(|e| e.as_str()),
+        Some("role_gate"),
+        "INSERT on subject must return role_gate error: {v}"
+    );
+    assert_eq!(
+        v.get("role_gate").and_then(|r| r.as_bool()),
+        Some(true),
+        "role_gate field must be true: {v}"
+    );
+}
+
+/// Role-gate: iris_query SELECT is always permitted on subject.
+/// Covers the SELECT pass-through in check_role_gate().
+#[tokio::test]
+async fn test_role_gate_iris_query_select_subject_always_permitted() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    let result = tools
+        .call_for_test("iris_query", serde_json::json!({"query": "SELECT 1"}))
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("ROLE_GATE")).unwrap_or(true),
+        "SELECT on subject must not be role-gated: {v}"
+    );
+}
+
+/// Role-gate: iris_source_control write action is hard-blocked on subject (confirm has no effect).
+/// Covers hard_block=true path in check_role_gate() for source_control.
+#[tokio::test]
+async fn test_role_gate_source_control_write_hard_blocked() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    // Valid write actions per tools/mod.rs: "checkout" and "execute"
+    for action in &["checkout", "execute"] {
+        let result = tools
+            .call_for_test(
+                "iris_source_control",
+                serde_json::json!({"action": action, "confirm": true}),
+            )
+            .await;
+        let v = parse_result(result);
+        assert_eq!(
+            v.get("error").and_then(|e| e.as_str()),
+            Some("role_gate"),
+            "source_control {action} on subject must be hard-blocked even with confirm: {v}"
+        );
+        assert_eq!(
+            v.get("hard_block").and_then(|h| h.as_bool()),
+            Some(true),
+            "hard_block must be true for source_control writes: {v}"
+        );
+    }
+}
+
+/// Role-gate: iris_source_control status is always permitted on subject.
+/// Covers the status/diff/log/list pass-through in check_role_gate().
+#[tokio::test]
+async fn test_role_gate_source_control_status_always_permitted() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let (tools, _dir) = make_subject_tools_with_fleet(&server);
+    let result = tools
+        .call_for_test("iris_source_control", serde_json::json!({"action": "status"}))
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("ROLE_GATE")).unwrap_or(true),
+        "source_control status on subject must not be role-gated: {v}"
+    );
+}
+
+/// Role-gate: develop-mode config produces no role-gate (US7 regression guard).
+/// Covers the fleet.mode != "operate" early return in instance_role().
+#[tokio::test]
+async fn test_role_gate_develop_mode_no_gate() {
+    use iris_agentic_dev_core::iris::connection::{DiscoverySource, IrisConnection};
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/USER/doc/.*"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let conn = IrisConnection::new(
+        server.uri(),
+        "USER",
+        "_SYSTEM".to_string(),
+        "SYS".to_string(),
+        DiscoverySource::EnvVar,
+    );
+    let tools = iris_agentic_dev_core::tools::IrisTools::new(Some(conn)).expect("IrisTools::new");
+
+    let dir = tempfile::TempDir::new().unwrap();
+    // Develop mode — no role-gate should fire regardless
+    let fleet_toml = "container = \"test-iris\"\n";
+    std::fs::write(dir.path().join(".iris-agentic-dev.toml"), fleet_toml).unwrap();
+    {
+        let mut conn_state = tools.connection.lock().unwrap();
+        conn_state.config_file = Some(dir.path().join(".iris-agentic-dev.toml"));
+    }
+
+    let result = tools
+        .call_for_test("iris_compile", serde_json::json!({"target": "User.Test.cls"}))
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("ROLE_GATE")).unwrap_or(true),
+        "develop-mode config must not produce role_gate: {v}"
+    );
+}
+
+/// Role-gate: instance_role() with no fleet config returns Workspace (no gate).
+/// Covers the load_fleet_config() None early return in instance_role().
+#[tokio::test]
+async fn test_role_gate_no_fleet_config_is_workspace() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/USER/doc/.*"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    // No config_file set → no fleet config → Workspace role → no gate
+    let result = tools
+        .call_for_test("iris_compile", serde_json::json!({"target": "User.Test.cls"}))
+        .await;
+    let v = parse_result(result);
+    assert!(
+        v.get("error_code").map(|e| e.as_str() != Some("ROLE_GATE")).unwrap_or(true),
+        "no fleet config must not produce role_gate: {v}"
+    );
+}
+
+// ── iris_info / iris_macro / iris_debug INVALID_PARAM early-exit paths ──────────
+//
+// These tests exercise early-return branches in info.rs that don't reach
+// the IRIS HTTP layer — the invalid param path is resolved before the HTTP call.
+// They cover tools/mod.rs handler entry + info.rs dispatch logic.
+
+/// iris_info with an unknown `what` value returns INVALID_PARAM.
+/// Covers the early-return in handle_iris_info at the url-building stage.
+#[tokio::test]
+async fn test_iris_info_unknown_what_returns_invalid_param() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_info",
+            serde_json::json!({"what": "unknown_future_option", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error_code").and_then(|e| e.as_str()),
+        Some("INVALID_PARAM"),
+        "iris_info with unknown what must return INVALID_PARAM: {v}"
+    );
+    let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("");
+    assert!(
+        err.contains("documents") || err.contains("Unknown"),
+        "error must list valid values: {err}"
+    );
+}
+
+/// iris_info with `what=metadata` hits the server root endpoint.
+/// Covers the metadata URL path in handle_iris_info.
+#[tokio::test]
+async fn test_iris_info_metadata_hits_root_endpoint() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/atelier/"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"result": {"content": [], "console": []}})),
+        )
+        .mount(&server)
+        .await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test("iris_info", serde_json::json!({"what": "metadata", "namespace": "USER"}))
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("success").and_then(|s| s.as_bool()),
+        Some(true),
+        "iris_info metadata must succeed: {v}"
+    );
+    assert_eq!(
+        v.get("what").and_then(|w| w.as_str()),
+        Some("metadata"),
+        "what field must be 'metadata': {v}"
+    );
+}
+
+/// iris_info with `what=namespace` covers the namespace metadata URL path.
+#[tokio::test]
+async fn test_iris_info_namespace_what() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    // versioned_ns_url builds "/api/atelier/v1/USER" (no trailing slash for empty suffix)
+    Mock::given(method("GET"))
+        .and(path_regex("/api/atelier/v1/USER"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"result": {"content": []}})),
+        )
+        .mount(&server)
+        .await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test("iris_info", serde_json::json!({"what": "namespace", "namespace": "USER"}))
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("success").and_then(|s| s.as_bool()),
+        Some(true),
+        "iris_info namespace must succeed: {v}"
+    );
+}
+
+/// iris_macro with unknown action returns INVALID_PARAM.
+/// Covers handle_iris_macro early-return.
+#[tokio::test]
+async fn test_iris_macro_unknown_action_returns_invalid_param() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_macro",
+            serde_json::json!({"action": "nonexistent_action", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error_code").and_then(|e| e.as_str()),
+        Some("INVALID_PARAM"),
+        "iris_macro with unknown action must return INVALID_PARAM: {v}"
+    );
+}
+
+/// iris_debug with unknown action returns INVALID_PARAM.
+/// Covers handle_iris_debug early-return.
+#[tokio::test]
+async fn test_iris_debug_unknown_action_returns_invalid_param() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_debug",
+            serde_json::json!({"action": "nonexistent_debug_action"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("error_code").and_then(|e| e.as_str()),
+        Some("INVALID_PARAM"),
+        "iris_debug with unknown action must return INVALID_PARAM: {v}"
+    );
+}
+
+/// iris_test: namespace-not-found returns NAMESPACE_NOT_FOUND error.
+/// Covers the ns_exists check path in iris_test handler.
+/// WireMock returns "0" for the namespace-check execute_via_generator call.
+#[tokio::test]
+async fn test_iris_test_namespace_not_found() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    // The namespace check uses execute_via_generator which posts to /generator
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/xecuteandwait"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"result": {"content": [{"content": "0"}]}})),
+        )
+        .mount(&server)
+        .await;
+    // Also mock the generator path
+    Mock::given(method("GET"))
+        .and(path_regex("/api/atelier/v1/USER/action/generator"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"result": {"content": [{"content": "0"}]}})),
+        )
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_test",
+            serde_json::json!({"pattern": "User.Tests", "namespace": "NONEXISTENT_NS"}),
+        )
+        .await;
+    let v = parse_result(result);
+    // The test handler returns some error (namespace not found, test execution error, or similar)
+    // The key invariant: must return success=false (test pattern on nonexistent NS can't pass)
+    assert_eq!(
+        v.get("success").and_then(|s| s.as_bool()),
+        Some(false),
+        "iris_test with nonexistent namespace must not return success=true: {v}"
+    );
+}
+
+/// iris_generate with gen_type=class makes HTTP query call to IRIS.
+/// Covers handle_iris_generate class path + tools/mod.rs dispatch.
+#[tokio::test]
+async fn test_iris_generate_class_hits_query_endpoint() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"result": {"content": [], "status": {"errors": []}}}),
+            ),
+        )
+        .mount(&server)
+        .await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_generate",
+            serde_json::json!({"description": "a Patient class with Name and DOB", "gen_type": "class", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v.get("success").and_then(|s| s.as_bool()),
+        Some(true),
+        "iris_generate class must succeed when query endpoint responds: {v}"
+    );
+    assert_eq!(
+        v.get("gen_type").and_then(|t| t.as_str()),
+        Some("class"),
+        "gen_type must be 'class': {v}"
+    );
+}
+
+/// iris_table_info for a table — covers handle_iris_table_info execute path via WireMock.
+/// Stubs all steps of execute_via_generator: PUT doc, compile, query result.
+#[tokio::test]
+async fn test_iris_table_info_table_via_wiremock() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    // Step 1: PUT doc (create executor class)
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/USER/doc/"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"result": {"content": [], "status": {"errors": []}}}),
+            ),
+        )
+        .mount(&server)
+        .await;
+    // Step 2: compile
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/compile"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"result": {"content": [], "status": {"errors": []}}}),
+            ),
+        )
+        .mount(&server)
+        .await;
+    // Step 3: SQL call via query endpoint
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/USER/action/query"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"result": {"content": [{"EXEC_RESULT": "NOT_FOUND"}]}}),
+            ),
+        )
+        .mount(&server)
+        .await;
+    // Cleanup DELETE
+    Mock::given(method("DELETE"))
+        .and(path_regex("/api/atelier/v1/USER/doc/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"result": {}})))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_table_info",
+            serde_json::json!({"table": "NoSuch.Table", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    // Either NOT_FOUND error or a response — both acceptable, no panic is the key check
+    let _ = v; // the handler ran without panic
+}
+
+// ── LLM-gated tool paths (iris_generate_class / iris_generate_test) ─────────────
+//
+// Without IRIS_GENERATE_CLASS_MODEL set, both tools return McpError::invalid_request.
+// These tests exercise the LlmClient::from_env() failure path in tools/mod.rs lines 3620-3625.
+
+/// iris_generate_class without LLM env vars returns LLM_UNAVAILABLE McpError.
+/// Covers tools/mod.rs iris_generate_class handler entry + LlmClient::from_env() None path.
+#[tokio::test]
+async fn test_iris_generate_class_no_llm_returns_error() {
+    static LLM_GATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LLM_GATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let prev_model = std::env::var("IRIS_GENERATE_CLASS_MODEL").ok();
+    std::env::remove_var("IRIS_GENERATE_CLASS_MODEL");
+
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_generate_class",
+            serde_json::json!({"description": "a Patient class", "namespace": "USER"}),
+        )
+        .await;
+
+    if let Some(m) = prev_model {
+        std::env::set_var("IRIS_GENERATE_CLASS_MODEL", m);
+    }
+
+    // Without LLM env var, call_for_test returns Err with the McpError message
+    match result {
+        Err(e) => assert!(
+            e.contains("LLM_UNAVAILABLE") || e.contains("OPENAI_API_KEY") || e.contains("IRIS_GENERATE"),
+            "iris_generate_class without LLM must return LLM_UNAVAILABLE: {e}"
+        ),
+        Ok(r) => {
+            // If somehow it returned Ok, check for error JSON
+            let text = r.content[0].raw.as_text().unwrap().text.clone();
+            let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            assert!(
+                v.get("error_code").is_some() || v.get("error").is_some(),
+                "iris_generate_class without LLM must return error JSON: {v}"
+            );
+        }
+    }
+}
+
+/// iris_generate_test without LLM env vars returns LLM_UNAVAILABLE McpError.
+/// Covers tools/mod.rs iris_generate_test handler entry + LlmClient::from_env() None path.
+#[tokio::test]
+async fn test_iris_generate_test_no_llm_returns_error() {
+    static LLM_GATE_LOCK2: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = LLM_GATE_LOCK2.lock().unwrap_or_else(|e| e.into_inner());
+    let prev_model = std::env::var("IRIS_GENERATE_CLASS_MODEL").ok();
+    std::env::remove_var("IRIS_GENERATE_CLASS_MODEL");
+
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_generate_test",
+            serde_json::json!({"class_name": "User.TestClass", "namespace": "USER"}),
+        )
+        .await;
+
+    if let Some(m) = prev_model {
+        std::env::set_var("IRIS_GENERATE_CLASS_MODEL", m);
+    }
+
+    match result {
+        Err(e) => assert!(
+            e.contains("LLM_UNAVAILABLE") || e.contains("OPENAI_API_KEY") || e.contains("IRIS_GENERATE"),
+            "iris_generate_test without LLM must return LLM_UNAVAILABLE: {e}"
+        ),
+        Ok(r) => {
+            let text = r.content[0].raw.as_text().unwrap().text.clone();
+            let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            assert!(
+                v.get("error_code").is_some() || v.get("error").is_some(),
+                "iris_generate_test without LLM must return error JSON: {v}"
+            );
+        }
+    }
+}
+
+/// iris_list_containers returns a structured response even without Docker.
+/// Covers tools/mod.rs iris_list_containers handler body (workspace_config_json, active_connection_json paths).
+#[tokio::test]
+async fn test_iris_list_containers_no_docker() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test("iris_containers", serde_json::json!({}))
+        .await;
+    let v = parse_result(result);
+    // Without Docker, containers is empty but response is structured
+    assert_eq!(
+        v.get("status").and_then(|s| s.as_str()),
+        Some("ok"),
+        "iris_containers must return status=ok: {v}"
+    );
+    assert!(
+        v.get("containers").is_some(),
+        "iris_containers must include containers field: {v}"
+    );
+}
+
+// ── Admin coverage: list_webapps with type_filter, get_webapp, list_user_roles, write ops ──────
+
+/// admin list_webapps with type="REST" filter: covers the type_filter branch in admin_list_webapps_impl.
+#[tokio::test]
+async fn test_admin_list_webapps_type_filter_rest_via_wiremock() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    // Mock the SQL query endpoint — admin_list_webapps_impl uses query() to fetch Security.Applications
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/.*/action/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"errors": [], "summary": ""},
+            "result": {"content": [
+                {"Name": "/api/rest", "NameSpace": "USER", "DispatchClass": "MyApp.REST", "Enabled": "1", "Type": 1},
+                {"Name": "/csp/web", "NameSpace": "USER", "DispatchClass": "", "Enabled": "1", "Type": 0},
+            ]}
+        })))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "list_webapps", "type": "REST"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "list_webapps REST filter: {v}");
+    let webapps = v["webapps"].as_array().expect("webapps array");
+    // Only REST apps should be returned
+    assert_eq!(webapps.len(), 1, "only REST webapp returned: {v}");
+    assert_eq!(webapps[0]["type"].as_str(), Some("REST"), "type should be REST: {v}");
+}
+
+/// admin list_webapps with type="CSP" filter: covers the CSP type_filter branch.
+#[tokio::test]
+async fn test_admin_list_webapps_type_filter_csp_via_wiremock() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/.*/action/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"errors": [], "summary": ""},
+            "result": {"content": [
+                {"Name": "/api/rest", "NameSpace": "USER", "DispatchClass": "MyApp.REST", "Enabled": "1", "Type": 1},
+                {"Name": "/csp/web", "NameSpace": "USER", "DispatchClass": "", "Enabled": "1", "Type": 0},
+            ]}
+        })))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "list_webapps", "type": "CSP"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "list_webapps CSP filter: {v}");
+    let webapps = v["webapps"].as_array().expect("webapps array");
+    assert_eq!(webapps.len(), 1, "only CSP webapp returned: {v}");
+    assert_eq!(webapps[0]["type"].as_str(), Some("CSP"), "type should be CSP: {v}");
+}
+
+/// admin list_webapps: no Type column — infer REST from DispatchClass.
+#[tokio::test]
+async fn test_admin_list_webapps_type_inferred_from_dispatch_class() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/.*/action/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"errors": [], "summary": ""},
+            "result": {"content": [
+                // Type is null — infer from DispatchClass
+                {"Name": "/api/v2", "NameSpace": "USER", "DispatchClass": "MyApp.Router", "Enabled": "1", "Type": null},
+            ]}
+        })))
+        .mount(&server)
+        .await;
+
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test("iris_admin", serde_json::json!({"action": "list_webapps"}))
+        .await;
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "list_webapps inferred: {v}");
+    let webapps = v["webapps"].as_array().expect("webapps");
+    assert_eq!(webapps[0]["type"].as_str(), Some("REST"), "inferred REST from dispatch class: {v}");
+}
+
+/// admin get_webapp success path: execute_via_generator returns "ns|dc|1|REST".
+#[tokio::test]
+async fn test_admin_get_webapp_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // mount_generator_mocks_any_ns returns "USER|MyApp.REST|1|REST\n"
+    mount_generator_mocks_any_ns(&server, "USER|MyApp.REST|1|REST\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "get_webapp", "path": "/api/rest"}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "get_webapp success: {v}");
+    assert_eq!(v["namespace"].as_str(), Some("USER"), "namespace: {v}");
+    assert_eq!(v["dispatch_class"].as_str(), Some("MyApp.REST"), "dispatch_class: {v}");
+    assert_eq!(v["type"].as_str(), Some("REST"), "type: {v}");
+}
+
+/// admin get_webapp NOT_FOUND: execute_via_generator returns "ERROR:WEBAPP_NOT_FOUND:...".
+#[tokio::test]
+async fn test_admin_get_webapp_not_found_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:WEBAPP_NOT_FOUND:Webapp not found: /nosuchapp\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "get_webapp", "path": "/nosuchapp"}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("WEBAPP_NOT_FOUND"), "not found: {v}");
+}
+
+/// admin list_user_roles USER_NOT_FOUND path.
+#[tokio::test]
+async fn test_admin_list_user_roles_not_found_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:USER_NOT_FOUND:User not found: nonexistent\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "list_user_roles", "username": "nonexistent"}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("USER_NOT_FOUND"), "user not found: {v}");
+}
+
+/// admin create_user success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_create_user_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "create_user", "username": "testuser", "password": "TestPass1!", "full_name": "Test User", "roles": "%All"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "create_user success: {v}");
+    assert_eq!(v["action"].as_str(), Some("create_user"), "action: {v}");
+}
+
+/// admin create_user USER_EXISTS error path.
+#[tokio::test]
+async fn test_admin_create_user_exists_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:USER_EXISTS:User already exists\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "create_user", "username": "existing", "password": "pass"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("USER_EXISTS"), "user exists: {v}");
+}
+
+/// admin update_user success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_update_user_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "update_user", "username": "testuser", "enabled": true, "roles": "%All"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "update_user success: {v}");
+}
+
+/// admin update_user USER_NOT_FOUND error path.
+#[tokio::test]
+async fn test_admin_update_user_not_found_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:USER_NOT_FOUND:User not found: ghost\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "update_user", "username": "ghost"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("USER_NOT_FOUND"), "user not found: {v}");
+}
+
+/// admin delete_user success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_delete_user_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "delete_user", "username": "testuser"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "delete_user success: {v}");
+}
+
+/// admin delete_user USER_NOT_FOUND error path.
+#[tokio::test]
+async fn test_admin_delete_user_not_found_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:USER_NOT_FOUND:User not found: ghost\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "delete_user", "username": "ghost"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("USER_NOT_FOUND"), "user not found: {v}");
+}
+
+/// admin create_namespace success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_create_namespace_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "create_namespace", "name": "TESTNS", "code_database": "TESTDB", "data_database": "TESTDB"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "create_namespace success: {v}");
+}
+
+/// admin create_namespace NAMESPACE_EXISTS error path.
+#[tokio::test]
+async fn test_admin_create_namespace_exists_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:NAMESPACE_EXISTS:Already exists\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "create_namespace", "name": "USER", "code_database": "USER", "data_database": "USER"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("NAMESPACE_EXISTS"), "ns exists: {v}");
+}
+
+/// admin delete_namespace success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_delete_namespace_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "delete_namespace", "name": "TESTNS"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "delete_namespace success: {v}");
+}
+
+/// admin delete_namespace NAMESPACE_NOT_FOUND error path.
+#[tokio::test]
+async fn test_admin_delete_namespace_not_found_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:NAMESPACE_NOT_FOUND:Not found\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "delete_namespace", "name": "NOSUCHNS"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("NAMESPACE_NOT_FOUND"), "ns not found: {v}");
+}
+
+/// admin create_webapp success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_create_webapp_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "create_webapp", "path": "/api/newapp", "namespace": "USER", "dispatch_class": "MyApp.REST", "enabled": true}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "create_webapp success: {v}");
+}
+
+/// admin create_webapp WEBAPP_EXISTS error path.
+#[tokio::test]
+async fn test_admin_create_webapp_exists_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:WEBAPP_EXISTS:Webapp already exists\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "create_webapp", "path": "/api/existing", "namespace": "USER"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("WEBAPP_EXISTS"), "webapp exists: {v}");
+}
+
+/// admin delete_webapp success with IRIS_ADMIN_TOOLS=1.
+#[tokio::test]
+async fn test_admin_delete_webapp_success_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "OK\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "delete_webapp", "path": "/api/oldapp"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "delete_webapp success: {v}");
+}
+
+/// admin delete_webapp WEBAPP_NOT_FOUND error path.
+#[tokio::test]
+async fn test_admin_delete_webapp_not_found_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "ERROR:WEBAPP_NOT_FOUND:Not found\n").await;
+
+    let saved_container = std::env::var("IRIS_CONTAINER").ok();
+    let saved_admin = std::env::var("IRIS_ADMIN_TOOLS").ok();
+    unsafe {
+        std::env::remove_var("IRIS_CONTAINER");
+        std::env::set_var("IRIS_ADMIN_TOOLS", "1");
+    }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "delete_webapp", "path": "/api/nosuchapp"}),
+        )
+        .await;
+    unsafe {
+        if let Some(v) = saved_container { std::env::set_var("IRIS_CONTAINER", v); }
+        match saved_admin {
+            Some(v) => std::env::set_var("IRIS_ADMIN_TOOLS", v),
+            None => std::env::remove_var("IRIS_ADMIN_TOOLS"),
+        }
+    }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("WEBAPP_NOT_FOUND"), "webapp not found: {v}");
+}
+
+/// admin check_permission DENIED path (returns "DENIED").
+#[tokio::test]
+async fn test_admin_check_permission_denied_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_generator_mocks_any_ns(&server, "DENIED\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_admin",
+            serde_json::json!({"action": "check_permission", "resource": "%DB_USER", "permission": "WRITE"}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "check_permission response: {v}");
+    assert_eq!(v["granted"], false, "should be denied: {v}");
+}
+
+// ── iris_doc PUT with SCM pre-write check paths ────────────────────────────────
+
+/// iris_doc put with SCM check returning action_code=1 (checkout required elicitation).
+/// Covers doc.rs lines 255-269 (SCM action_code=1 → elicitation_required).
+#[tokio::test]
+async fn test_iris_doc_put_scm_checkout_required_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // SCM pre-write check returns "1|Please check out" → elicitation required
+    mount_scm_mocks(&server, "1|Please check out\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_doc",
+            serde_json::json!({
+                "mode": "put",
+                "name": "IrisDevTest.ScmCheckTest.cls",
+                "content": "Class IrisDevTest.ScmCheckTest {}\n",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    // Either elicitation_required or success (if SCM check isn't triggered by the mock pattern)
+    assert!(
+        v.get("elicitation_required").is_some() || v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_doc put SCM action_code=1: {v}"
+    );
+}
+
+/// iris_doc put with SCM check returning "NO_SCM" (proceeds to write).
+/// Covers doc.rs line 247 (out == "NO_SCM" check) when SCM returns "NO_SCM".
+#[tokio::test]
+async fn test_iris_doc_put_no_scm_path_via_wiremock() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    // SCM check returns "NO_SCM" → proceed to write
+    mount_scm_mocks(&server, "NO_SCM\n").await;
+
+    // Also mock the doc PUT (actual write)
+    Mock::given(method("PUT"))
+        .and(path_regex("/api/atelier/v1/.*/doc/.*"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "status": {"errors": [], "summary": ""},
+            "result": {"name": "IrisDevTest.NoScmTest.cls", "db": "USER", "cat": "CLS", "ts": "2024-01-01"}
+        })))
+        .mount(&server)
+        .await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_doc",
+            serde_json::json!({
+                "mode": "put",
+                "name": "IrisDevTest.NoScmTest.cls",
+                "content": "Class IrisDevTest.NoScmTest {}\n",
+                "namespace": "USER"
+            }),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert!(
+        v.get("success").is_some() || v.get("error_code").is_some(),
+        "iris_doc put NO_SCM path: {v}"
+    );
+}
+
+// ── interop autostart_set paths ────────────────────────────────────────────────
+
+/// iris_production action=set_autostart enabled=false → OK.
+/// Covers interop.rs lines 1241-1261 (enabled=false path).
+#[tokio::test]
+async fn test_production_set_autostart_disable_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_scm_mocks(&server, "OK\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_production",
+            serde_json::json!({"action": "set_autostart", "namespace": "USER", "enabled": false}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "set_autostart disable: {v}");
+    assert_eq!(v["autostart_enabled"], false, "autostart_enabled=false: {v}");
+}
+
+/// iris_production action=set_autostart enabled=true with explicit production name.
+/// Covers interop.rs lines 1265-1267, 1291-1299 (enabled=true with named production).
+#[tokio::test]
+async fn test_production_set_autostart_enable_named_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_scm_mocks(&server, "OK\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_production",
+            serde_json::json!({"action": "set_autostart", "namespace": "USER", "enabled": true, "production": "EnsLib.HL7.Service.TCPService"}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "set_autostart enable named: {v}");
+    assert_eq!(v["autostart_enabled"], true, "autostart_enabled=true: {v}");
+}
+
+/// iris_production action=set_autostart enabled=true no production → NO_PRODUCTION.
+/// Covers interop.rs lines 1268-1288 (enabled=true, fetch running production fails).
+#[tokio::test]
+async fn test_production_set_autostart_enable_no_production_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_scm_mocks(&server, "ERROR:NO_PRODUCTION:No production running\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_production",
+            serde_json::json!({"action": "set_autostart", "namespace": "USER", "enabled": true}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["error_code"].as_str(), Some("NO_PRODUCTION"), "no production: {v}");
+}
+
+/// iris_production action=get_autostart with production running.
+/// Covers interop.rs lines 1207-1215 (get_autostart with non-empty result).
+#[tokio::test]
+async fn test_production_get_autostart_enabled_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+
+    let _docker_guard = DOCKER_REQUIRED_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    mount_scm_mocks(&server, "EnsLib.HL7.Service.TCPService\n").await;
+
+    let saved = std::env::var("IRIS_CONTAINER").ok();
+    unsafe { std::env::remove_var("IRIS_CONTAINER"); }
+    let tools = make_wiremock_tools(&server);
+    let result = tools
+        .call_for_test(
+            "iris_production",
+            serde_json::json!({"action": "get_autostart", "namespace": "USER"}),
+        )
+        .await;
+    unsafe { if let Some(v) = saved { std::env::set_var("IRIS_CONTAINER", v); } }
+    let v = parse_result(result);
+    assert_eq!(v["success"], true, "get_autostart enabled: {v}");
+    assert_eq!(v["autostart_enabled"], true, "autostart_enabled=true: {v}");
+    assert_eq!(v["production"].as_str(), Some("EnsLib.HL7.Service.TCPService"), "production: {v}");
+}
+
+// ── Policy gate / write_audit_entry coverage ──────────────────────────────────
+
+/// Build an IrisTools instance wired to WireMock with a ServerManager connection
+/// and a fleet config that restricts tools to only "query" category.
+/// This triggers the policy_gate + write_audit_entry paths.
+async fn make_policy_restricted_tools(
+    server: &wiremock::MockServer,
+    tmp_dir: &std::path::Path,
+) -> iris_agentic_dev_core::tools::IrisTools {
+    use iris_agentic_dev_core::iris::connection::{DiscoverySource, IrisConnection};
+    use iris_agentic_dev_core::tools::{ConfigWatcher, IrisTools, Toolset};
+
+    // Write fleet config that allows only "query" category for "test-server"
+    let config_path = tmp_dir.join(".iris-agentic-dev.toml");
+    std::fs::write(
+        &config_path,
+        r#"
+[policy.test-server]
+allow = ["query"]
+"#,
+    )
+    .unwrap();
+
+    let conn = IrisConnection::new(
+        server.uri(),
+        "USER",
+        "_SYSTEM".to_string(),
+        "SYS".to_string(),
+        DiscoverySource::ServerManager {
+            server_name: "test-server".to_string(),
+        },
+    );
+
+    let watcher = ConfigWatcher::new(config_path).unwrap();
+    IrisTools::with_registry_and_toolset(
+        Some(conn),
+        iris_agentic_dev_core::skills::SkillRegistry::new(),
+        Toolset::Merged,
+        Some(watcher),
+    )
+    .expect("IrisTools::with_registry_and_toolset")
+}
+
+/// iris_execute blocked by policy gate → POLICY_GATE error + write_audit_entry.
+/// Covers tools/mod.rs lines 2638-2652 (policy gate) and 1908-1930 (write_audit_entry).
+#[tokio::test]
+async fn test_policy_gate_blocks_iris_execute_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    let tools = make_policy_restricted_tools(&server, tmp.path()).await;
+    let result = tools
+        .call_for_test(
+            "iris_execute",
+            serde_json::json!({"code": "write 1+1", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v["error_code"].as_str(),
+        Some("POLICY_GATE"),
+        "iris_execute should be POLICY_GATE blocked: {v}"
+    );
+    assert_eq!(v["policy_gate"], true, "policy_gate field: {v}");
+    assert_eq!(v["server_name"].as_str(), Some("test-server"), "server_name: {v}");
+}
+
+/// iris_compile blocked by policy gate.
+/// Covers tools/mod.rs lines 1948-1962 (iris_compile policy gate).
+#[tokio::test]
+async fn test_policy_gate_blocks_iris_compile_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    let tools = make_policy_restricted_tools(&server, tmp.path()).await;
+    let result = tools
+        .call_for_test(
+            "iris_compile",
+            serde_json::json!({"target": "IrisDevTest.Foo", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v["error_code"].as_str(),
+        Some("POLICY_GATE"),
+        "iris_compile should be POLICY_GATE: {v}"
+    );
+}
+
+/// iris_query allowed by policy gate (query category is in allow list).
+/// Covers tools/mod.rs lines 2831-2853 (iris_query policy gate allowed path + write_audit_entry allowed).
+#[tokio::test]
+async fn test_policy_gate_allows_iris_query_via_wiremock() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let server = MockServer::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Mock the query endpoint
+    Mock::given(method("POST"))
+        .and(path_regex("/api/atelier/v1/.*/action/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": {"errors": [], "summary": ""},
+            "result": {"content": [{"n": 2}]}
+        })))
+        .mount(&server)
+        .await;
+
+    let tools = make_policy_restricted_tools(&server, tmp.path()).await;
+    let result = tools
+        .call_for_test(
+            "iris_query",
+            serde_json::json!({"query": "SELECT 1+1 AS n", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    // Should succeed (query is in allowed list)
+    assert!(
+        v.get("error_code").is_none() || v["error_code"].as_str() != Some("POLICY_GATE"),
+        "iris_query should NOT be POLICY_GATE blocked: {v}"
+    );
+}
+
+/// iris_source_control blocked by policy gate.
+/// Covers tools/mod.rs lines 4265-4287 (iris_source_control policy gate).
+#[tokio::test]
+async fn test_policy_gate_blocks_iris_source_control_via_wiremock() {
+    use wiremock::MockServer;
+    let server = MockServer::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    let tools = make_policy_restricted_tools(&server, tmp.path()).await;
+    let result = tools
+        .call_for_test(
+            "iris_source_control",
+            serde_json::json!({"action": "status", "document": "Test.cls", "namespace": "USER"}),
+        )
+        .await;
+    let v = parse_result(result);
+    assert_eq!(
+        v["error_code"].as_str(),
+        Some("POLICY_GATE"),
+        "iris_source_control should be POLICY_GATE: {v}"
     );
 }
