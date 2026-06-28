@@ -147,6 +147,20 @@ fn select_server_multi_with_env_var_selects_named() {
 }
 
 #[test]
+fn select_server_env_var_case_insensitive() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("IRIS_SERVER_NAME", "STAGING");
+    let profiles = parse_sm_settings(&fixture("sm_settings_multi.json"));
+    let result = select_server(&profiles);
+    std::env::remove_var("IRIS_SERVER_NAME");
+    assert!(
+        result.is_ok(),
+        "IRIS_SERVER_NAME match must be case-insensitive"
+    );
+    assert_eq!(result.unwrap().name, "staging");
+}
+
+#[test]
 fn select_server_env_var_unknown_name_returns_ambiguous() {
     let _guard = ENV_LOCK.lock().unwrap();
     std::env::set_var("IRIS_SERVER_NAME", "does-not-exist");

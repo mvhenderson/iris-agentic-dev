@@ -206,7 +206,11 @@ pub fn select_server(
                     available: profiles.iter().map(|p| p.name.clone()).collect(),
                 });
             }
-            match profiles.iter().find(|p| p.name == server_name) {
+            let server_name_lower = server_name.to_lowercase();
+            match profiles
+                .iter()
+                .find(|p| p.name.to_lowercase() == server_name_lower)
+            {
                 Some(p) => Ok(p),
                 None => Err(SmCredentialError::Ambiguous {
                     available: profiles.iter().map(|p| p.name.clone()).collect(),

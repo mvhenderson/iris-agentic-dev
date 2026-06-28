@@ -3267,7 +3267,10 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
                         .map(|p| {
                             let status = match resolve_credential(&p.name, &p.username) {
                                 Ok(_) => CredentialStatus::RESOLVED.to_string(),
-                                Err(_) => CredentialStatus::NOT_CONFIGURED.to_string(),
+                                Err(crate::iris::server_manager::SmCredentialError::CredentialNotFound { .. }) => {
+                                    CredentialStatus::NOT_CONFIGURED.to_string()
+                                }
+                                Err(_) => CredentialStatus::ERROR.to_string(),
                             };
                             let policy: Option<crate::iris::workspace_config::ConnectionPolicy> =
                                 fleet
