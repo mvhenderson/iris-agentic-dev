@@ -2,7 +2,7 @@
 
 **Feature Branch**: `034-live-connection-reload`  
 **Created**: 2026-05-08  
-**Status**: Draft  
+**Status**: Implemented — merged to master  
 **Closes**: #11 (iris_select_container discards new connection)
 
 ## Clarifications

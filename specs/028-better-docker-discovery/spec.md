@@ -2,7 +2,7 @@
 
 **Feature Branch**: `028-better-docker-discovery`
 **Created**: 2026-05-02
-**Status**: Draft
+**Status**: Implemented — merged to master
 **Closes**: GitHub issue #28
 
 ## Overview

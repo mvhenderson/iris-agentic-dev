@@ -2,7 +2,7 @@
 
 **Feature Branch**: `039-skills-e2e`
 **Created**: 2026-05-31
-**Status**: Draft
+**Status**: Implemented — merged to master
 **Input**: Deep E2E harness for the iris-agentic-dev skills system — simulates a total new user in a fresh isolated OpenCode installation following light-skills/README.md, with a live IRIS container, calling a real LLM, and asserting skill quality end-to-end.
 
 ## Problem Statement

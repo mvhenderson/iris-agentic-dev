@@ -2,7 +2,7 @@
 
 **Feature Branch**: `035-sql-macro-translate`  
 **Created**: 2026-05-08  
-**Status**: Draft  
+**Status**: Implemented — merged to master  
 
 ## Clarifications
 

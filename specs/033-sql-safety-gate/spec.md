@@ -2,7 +2,7 @@
 
 **Feature Branch**: `033-sql-safety-gate`  
 **Created**: 2026-05-07  
-**Status**: Draft  
+**Status**: Implemented — merged to master  
 **Closes**: #33
 
 ## User Scenarios & Testing *(mandatory)*

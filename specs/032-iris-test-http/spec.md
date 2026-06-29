@@ -2,7 +2,7 @@
 
 **Feature Branch**: `032-iris-test-http`  
 **Created**: 2026-05-07  
-**Status**: Draft  
+**Status**: Implemented — merged to master  
 **Closes**: #31
 
 ## Clarifications
