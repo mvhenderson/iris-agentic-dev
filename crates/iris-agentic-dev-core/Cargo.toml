@@ -245,5 +245,21 @@ name = "test_audit_log"
 path = "tests/unit/test_audit_log.rs"
 
 [[test]]
+name = "test_env_gate"
+path = "tests/unit/test_env_gate.rs"
+
+[[test]]
+name = "test_data_policy_gate"
+path = "tests/unit/test_data_policy_gate.rs"
+
+[[test]]
+name = "test_system_blocklist"
+path = "tests/unit/test_system_blocklist.rs"
+
+[[test]]
+name = "test_audit_phi_scrub"
+path = "tests/unit/test_audit_phi_scrub.rs"
+
+[[test]]
 name = "test_sm_e2e"
 path = "tests/integration/test_sm_e2e.rs"

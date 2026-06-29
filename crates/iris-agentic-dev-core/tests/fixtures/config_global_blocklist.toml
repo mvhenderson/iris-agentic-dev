@@ -1,0 +1,3 @@
+[policy.iris-dev]
+globalBlocklist = ["^MySecret*"]
+dataPolicyKillAllowlist = ["^SafeDelete*"]

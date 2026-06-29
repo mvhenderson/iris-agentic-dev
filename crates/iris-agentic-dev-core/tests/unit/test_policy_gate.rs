@@ -21,6 +21,10 @@ fn policy_allow(cats: &[&str]) -> ConnectionPolicy {
                 .map(|s| s.parse::<ToolCategory>().expect("valid category"))
                 .collect(),
         ),
+        mcp_template: None,
+        data_policy: None,
+        global_blocklist: vec![],
+        data_policy_kill_allowlist: vec![],
     }
 }
 

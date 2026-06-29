@@ -330,10 +330,22 @@ pub fn build_server_manager_config_json(
             let policy_json = cred
                 .and_then(|c| c.policy.as_ref())
                 .map(|pol| {
+                    let template_str = pol.mcp_template.as_ref().map(|t| match t {
+                        crate::iris::workspace_config::McpTemplate::Dev => "dev",
+                        crate::iris::workspace_config::McpTemplate::Test => "test",
+                        crate::iris::workspace_config::McpTemplate::Live => "live",
+                    });
+                    let data_policy_str = pol.data_policy.as_ref().map(|d| match d {
+                        crate::iris::workspace_config::DataPolicy::Block => "block",
+                        crate::iris::workspace_config::DataPolicy::Allow => "allow",
+                        crate::iris::workspace_config::DataPolicy::Redact => "redact",
+                    });
                     serde_json::json!({
                         "allow": pol.allow.as_ref().map(|cats| {
                             cats.iter().map(|c| c.as_str()).collect::<Vec<_>>()
-                        })
+                        }),
+                        "mcp_template": template_str,
+                        "data_policy": data_policy_str,
                     })
                 })
                 .unwrap_or(serde_json::Value::Null);
@@ -390,6 +402,13 @@ pub fn policy_gate(
             allow.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
         ),
     }))
+}
+
+/// Map a tool name to its `ToolCategory`. Public for use by the policy gate layer.
+pub fn tool_to_category_pub(
+    tool_name: &str,
+) -> Option<crate::iris::workspace_config::ToolCategory> {
+    tool_to_category(tool_name)
 }
 
 /// Map a tool name to its `ToolCategory`.

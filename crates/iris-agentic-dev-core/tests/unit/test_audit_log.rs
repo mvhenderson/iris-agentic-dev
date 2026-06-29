@@ -164,11 +164,50 @@ fn policy_connection_should_write_returns_true() {
     let policy = ConnectionPolicy {
         server_name: "prod".to_string(),
         allow: Some(vec![]),
+        mcp_template: None,
+        data_policy: None,
+        global_blocklist: vec![],
+        data_policy_kill_allowlist: vec![],
     };
     assert!(
         AuditLog::should_write(Some(&policy)),
         "connection with policy block → should_write must return true"
     );
+}
+
+// ── default_path ─────────────────────────────────────────────────────────────
+
+#[test]
+fn default_path_returns_audit_jsonl_under_iris_agentic_dev() {
+    let path = AuditLog::default_path();
+    // home_dir() should succeed on any CI/dev machine with a home directory
+    if let Some(p) = path {
+        let s = p.to_string_lossy();
+        assert!(
+            s.ends_with(".iris-agentic-dev/audit.jsonl")
+                || s.ends_with(".iris-agentic-dev\\audit.jsonl"),
+            "default_path must end with .iris-agentic-dev/audit.jsonl, got: {s}"
+        );
+        assert!(
+            s.contains(".iris-agentic-dev"),
+            "path must contain .iris-agentic-dev directory"
+        );
+    }
+    // If home_dir() returns None (unusual env), default_path() returns None — that's fine.
+}
+
+#[test]
+fn write_creates_nested_parent_directories() {
+    // Exercises write_inner's create_dir_all(parent) branch
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("nested").join("deeply").join("audit.jsonl");
+    let log = AuditLog::new(path.clone());
+    let entry = make_entry("iris_query", "allowed", false);
+    log.write(&entry)
+        .expect("write with nested dirs must succeed");
+    assert!(path.exists(), "audit.jsonl must be created in nested dirs");
+    let contents = fs::read_to_string(&path).unwrap();
+    assert!(contents.contains("iris_query"), "entry must be written");
 }
 
 // ── SC-002: audit write latency < 100ms ──────────────────────────────────────

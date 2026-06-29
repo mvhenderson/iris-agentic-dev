@@ -289,6 +289,10 @@ fn test_policy_gate_fires_before_role_gate() {
     let policy = ConnectionPolicy {
         server_name: "prod-server".to_string(),
         allow: Some(vec![ToolCategory::Query]),
+        mcp_template: None,
+        data_policy: None,
+        global_blocklist: vec![],
+        data_policy_kill_allowlist: vec![],
     };
 
     // Policy gate on "iris_compile" should fire

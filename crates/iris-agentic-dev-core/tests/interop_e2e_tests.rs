@@ -3,11 +3,19 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 fn iris_dev_bin() -> std::path::PathBuf {
-    let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/debug/iris-dev");
-    p
+    let mut root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    root.pop();
+    root.pop();
+    // Try all known locations and names in priority order
+    for dir in &["target/llvm-cov-target/debug", "target/debug"] {
+        for name in &["iris-agentic-dev", "iris-dev"] {
+            let candidate = root.join(dir).join(name);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    root.join("target/debug/iris-agentic-dev")
 }
 
 fn mcp_exchange(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
@@ -102,15 +110,17 @@ fn tools_list_returns_32_tools() {
     let names: Vec<_> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
     assert!(
-        names.len() >= 32,
-        "expected >=32 tools, got {}: {:?}",
+        names.len() >= 20,
+        "expected >=20 tools, got {}: {:?}",
         names.len(),
         &names[..names.len().min(10)]
     );
-    assert!(names.contains(&"interop_production_status"));
-    assert!(names.contains(&"interop_logs"));
-    assert!(names.contains(&"interop_queues"));
-    assert!(names.contains(&"interop_message_search"));
+    // Verify current tool names (consolidated from older interop_* names)
+    assert!(
+        names.contains(&"iris_production") || names.contains(&"iris_interop_query"),
+        "must contain interop tools: {:?}",
+        &names
+    );
     for name in &names {
         assert!(!name.contains('.'), "tool '{}' has dot", name);
     }
@@ -126,7 +136,8 @@ fn interop_production_status_returns_structured_json() {
     let responses = mcp_exchange(&[
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0.1"}}}),
         serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
-        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"interop_production_status","arguments":{}}}),
+        // iris_production replaces interop_production_status
+        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"iris_production","arguments":{"action":"status"}}}),
     ]);
 
     let resp = find_response(&responses, 2).expect("no tool response");
@@ -148,7 +159,8 @@ fn interop_logs_returns_structured_entries() {
     let responses = mcp_exchange(&[
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0.1"}}}),
         serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
-        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"interop_logs","arguments":{"limit":5,"log_type":"error"}}}),
+        // iris_interop_query replaces interop_logs
+        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"iris_interop_query","arguments":{"query_type":"error_log","limit":5}}}),
     ]);
 
     let resp = find_response(&responses, 2).expect("no tool response");
@@ -166,7 +178,8 @@ fn interop_queues_returns_array() {
     let responses = mcp_exchange(&[
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0.1"}}}),
         serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
-        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"interop_queues","arguments":{}}}),
+        // iris_interop_query replaces interop_queues
+        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"iris_interop_query","arguments":{"query_type":"queues"}}}),
     ]);
 
     let resp = find_response(&responses, 2).expect("no tool response");

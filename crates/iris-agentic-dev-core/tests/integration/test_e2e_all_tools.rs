@@ -7,11 +7,21 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 fn iris_dev_bin() -> std::path::PathBuf {
-    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop();
-    path.pop();
-    path.push("target/debug/iris-dev");
-    path
+    let root = {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop();
+        p.pop();
+        p
+    };
+    for dir in &["target/llvm-cov-target/debug", "target/debug"] {
+        for name in &["iris-agentic-dev", "iris-dev"] {
+            let candidate = root.join(dir).join(name);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    root.join("target/debug/iris-agentic-dev")
 }
 
 fn mcp_exchange_with_env(

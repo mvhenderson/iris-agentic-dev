@@ -721,14 +721,18 @@ If $$$ISERR(tSC2) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tS
 mod tests {
     use super::*;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_admin_write_allowed_default_false() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("IRIS_ADMIN_TOOLS");
         assert!(!admin_write_allowed());
     }
 
     #[test]
     fn test_admin_write_allowed_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("IRIS_ADMIN_TOOLS", "1");
         let result = admin_write_allowed();
         std::env::remove_var("IRIS_ADMIN_TOOLS");
@@ -737,6 +741,7 @@ mod tests {
 
     #[test]
     fn test_admin_write_allowed_true_string() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("IRIS_ADMIN_TOOLS", "true");
         let result = admin_write_allowed();
         std::env::remove_var("IRIS_ADMIN_TOOLS");
@@ -745,6 +750,7 @@ mod tests {
 
     #[test]
     fn test_admin_write_allowed_true_upper() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("IRIS_ADMIN_TOOLS", "TRUE");
         let result = admin_write_allowed();
         std::env::remove_var("IRIS_ADMIN_TOOLS");
@@ -753,6 +759,7 @@ mod tests {
 
     #[test]
     fn test_admin_write_allowed_false_string() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("IRIS_ADMIN_TOOLS", "false");
         let result = admin_write_allowed();
         std::env::remove_var("IRIS_ADMIN_TOOLS");
@@ -761,6 +768,7 @@ mod tests {
 
     #[test]
     fn test_admin_write_allowed_zero() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("IRIS_ADMIN_TOOLS", "0");
         let result = admin_write_allowed();
         std::env::remove_var("IRIS_ADMIN_TOOLS");

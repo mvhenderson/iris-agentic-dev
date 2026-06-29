@@ -150,7 +150,7 @@ fn test_workspace_config_namespace_applied() {
 
 #[test]
 fn test_workspace_config_sets_iris_container_env() {
-    let _guard = ENV_LOCK.lock().unwrap();
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("IRIS_CONTAINER");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         container: Some("mytest-iris".to_string()),
@@ -169,7 +169,7 @@ fn test_workspace_config_sets_iris_container_env() {
 
 #[test]
 fn test_compile_workspace_config_overrides_env() {
-    let _guard = ENV_LOCK.lock().unwrap();
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // Set IRIS_CONTAINER to an "old" value via env
     std::env::set_var("IRIS_CONTAINER", "old-container");
 
@@ -391,6 +391,7 @@ scheme = "https"
 
 #[test]
 fn test_https_scheme_in_base_url() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("IRIS_SCHEME");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         host: Some("iris.example.com".to_string()),
@@ -409,6 +410,7 @@ fn test_https_scheme_in_base_url() {
 
 #[test]
 fn test_https_scheme_with_prefix() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("IRIS_SCHEME");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         host: Some("dem".to_string()),
@@ -427,6 +429,7 @@ fn test_https_scheme_with_prefix() {
 
 #[test]
 fn test_default_scheme_is_http() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("IRIS_SCHEME");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         host: Some("localhost".to_string()),
@@ -444,6 +447,7 @@ fn test_default_scheme_is_http() {
 
 #[test]
 fn test_iris_scheme_env_var() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("IRIS_SCHEME", "https");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         host: Some("localhost".to_string()),
@@ -462,6 +466,7 @@ fn test_iris_scheme_env_var() {
 
 #[test]
 fn test_toml_scheme_overrides_env_var() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("IRIS_SCHEME", "http");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         host: Some("localhost".to_string()),
@@ -600,12 +605,15 @@ fn test_load_parses_docker_only_field() {
 
 #[test]
 fn test_docker_only_returns_localhost_connection() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var("IRIS_CONTAINER");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         container: Some("myapp-iris".to_string()),
         docker_only: true,
         ..Default::default()
     };
     let conn = workspace_config_to_connection(&cfg, "USER");
+    std::env::remove_var("IRIS_CONTAINER");
     assert!(
         conn.is_some(),
         "docker_only with container should return Some(IrisConnection)"
@@ -620,8 +628,10 @@ fn test_docker_only_returns_localhost_connection() {
 
 #[test]
 fn test_workspace_config_username_password_set_env() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("IRIS_USERNAME");
     std::env::remove_var("IRIS_PASSWORD");
+    std::env::remove_var("IRIS_CONTAINER");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         container: Some("mytest-iris".to_string()),
         username: Some("admin".to_string()),
@@ -641,6 +651,7 @@ fn test_workspace_config_username_password_set_env() {
     );
     std::env::remove_var("IRIS_USERNAME");
     std::env::remove_var("IRIS_PASSWORD");
+    std::env::remove_var("IRIS_CONTAINER");
 }
 
 // ── apply_workspace_config ────────────────────────────────────────────────────
@@ -1128,6 +1139,7 @@ fn test_load_fleet_config_falls_back_to_legacy() {
 // workspace_config_to_connection: host + container sets IRIS_CONTAINER too
 #[test]
 fn test_host_with_container_sets_iris_container_env() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("IRIS_CONTAINER");
     let cfg = iris_agentic_dev_core::iris::workspace_config::WorkspaceConfig {
         host: Some("remotehost".to_string()),

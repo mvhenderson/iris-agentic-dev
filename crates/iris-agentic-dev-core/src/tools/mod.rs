@@ -1940,6 +1940,23 @@ impl IrisTools {
         let iris = self.get_iris_reloaded().await?;
         let (sm_server, policy) = self.active_server_manager_policy();
         let params_json = serde_json::json!({ "target": p.target, "namespace": p.namespace });
+        if let Err(gate) = crate::policy::gate::dispatch_gate(
+            "iris_compile",
+            sm_server.as_deref().unwrap_or(""),
+            policy.as_ref(),
+            &params_json,
+        ) {
+            self.write_audit_entry(
+                "iris_compile",
+                sm_server.as_deref().unwrap_or(""),
+                policy.as_ref(),
+                "blocked",
+                Some("policy"),
+                None,
+                params_json,
+            );
+            return ok_json(gate);
+        }
         if let Some(gate) = crate::iris::server_manager::policy_gate(
             "iris_compile",
             sm_server.as_deref().unwrap_or(""),
@@ -2630,6 +2647,23 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
         let iris = self.get_iris_reloaded().await?;
         let (sm_server, policy) = self.active_server_manager_policy();
         let params_json = serde_json::json!({ "namespace": p.namespace });
+        if let Err(gate) = crate::policy::gate::dispatch_gate(
+            "iris_execute",
+            sm_server.as_deref().unwrap_or(""),
+            policy.as_ref(),
+            &params_json,
+        ) {
+            self.write_audit_entry(
+                "iris_execute",
+                sm_server.as_deref().unwrap_or(""),
+                policy.as_ref(),
+                "blocked",
+                Some("policy"),
+                None,
+                params_json,
+            );
+            return ok_json(gate);
+        }
         if let Some(gate) = crate::iris::server_manager::policy_gate(
             "iris_execute",
             sm_server.as_deref().unwrap_or(""),
@@ -2827,10 +2861,27 @@ do ##class(%UnitTest.Manager).RunTest("{pattern}","{flags}","{token}")"#,
     ) -> Result<CallToolResult, McpError> {
         tracing::info!(namespace = %p.namespace, force = p.force, "iris_query");
 
-        // Policy gate (044): fires before role gate.
+        // Policy gate (044 + 051): fires before role gate.
         let (sm_server_q, policy_q) = self.active_server_manager_policy();
         {
             let params_json = serde_json::json!({ "namespace": p.namespace });
+            if let Err(gate) = crate::policy::gate::dispatch_gate(
+                "iris_query",
+                sm_server_q.as_deref().unwrap_or(""),
+                policy_q.as_ref(),
+                &params_json,
+            ) {
+                self.write_audit_entry(
+                    "iris_query",
+                    sm_server_q.as_deref().unwrap_or(""),
+                    policy_q.as_ref(),
+                    "blocked",
+                    Some("policy"),
+                    None,
+                    params_json,
+                );
+                return ok_json(gate);
+            }
             if let Some(gate) = crate::iris::server_manager::policy_gate(
                 "iris_query",
                 sm_server_q.as_deref().unwrap_or(""),
@@ -4264,10 +4315,27 @@ Methods:
         Parameters(p): Parameters<ScmParams>,
     ) -> Result<CallToolResult, McpError> {
         let iris = self.get_iris_reloaded().await?;
-        // Policy gate (044): check before role gate.
+        // Policy gate (044 + 051): check before role gate.
         let (sm_server_sc, policy_sc) = self.active_server_manager_policy();
         {
             let params_json = serde_json::json!({ "action": p.action, "namespace": p.namespace });
+            if let Err(gate) = crate::policy::gate::dispatch_gate(
+                "iris_source_control",
+                sm_server_sc.as_deref().unwrap_or(""),
+                policy_sc.as_ref(),
+                &params_json,
+            ) {
+                self.write_audit_entry(
+                    "iris_source_control",
+                    sm_server_sc.as_deref().unwrap_or(""),
+                    policy_sc.as_ref(),
+                    "blocked",
+                    Some("policy"),
+                    None,
+                    params_json,
+                );
+                return ok_json(gate);
+            }
             if let Some(gate) = crate::iris::server_manager::policy_gate(
                 "iris_source_control",
                 sm_server_sc.as_deref().unwrap_or(""),

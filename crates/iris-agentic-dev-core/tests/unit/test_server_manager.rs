@@ -519,6 +519,10 @@ fn check_config_sm_with_policy_allow_serialized() {
         policy: Some(ConnectionPolicy {
             server_name: "dev-local".to_string(),
             allow: Some(vec![ToolCategory::Query, ToolCategory::Docs]),
+            mcp_template: None,
+            data_policy: None,
+            global_blocklist: vec![],
+            data_policy_kill_allowlist: vec![],
         }),
     }];
     let json = build_server_manager_config_json(&profiles, Some("dev-local"), &cred_entries);
@@ -556,6 +560,10 @@ fn policy_gate_unknown_tool_not_gated() {
     let policy = ConnectionPolicy {
         server_name: "prod".to_string(),
         allow: Some(vec![ToolCategory::Query]),
+        mcp_template: None,
+        data_policy: None,
+        global_blocklist: vec![],
+        data_policy_kill_allowlist: vec![],
     };
     let gate = policy_gate("unknown_future_tool", "prod", Some(&policy));
     assert!(

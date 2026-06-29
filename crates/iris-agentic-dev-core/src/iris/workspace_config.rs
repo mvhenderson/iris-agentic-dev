@@ -55,6 +55,30 @@ pub struct InstanceConfig {
     pub subject: Option<String>,
 }
 
+/// Environment template gate: controls which tool categories are available on a connection.
+/// Default: `Dev` (all tools permitted).
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum McpTemplate {
+    #[default]
+    Dev,
+    Test,
+    Live,
+}
+
+/// PHI data policy: controls whether PHI-capable tools execute and how responses are handled.
+/// Default: `Block` (PHI-capable tools blocked before any IRIS call).
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DataPolicy {
+    #[default]
+    Block,
+    Allow,
+    /// PHI-capable tools permitted; PHI fields in responses replaced with `[REDACTED-PHI]`.
+    /// HL7 v2 field-level redaction is a follow-on delivery.
+    Redact,
+}
+
 /// Tool categories for per-connection policy gates (044-servermanager-discovery).
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -111,6 +135,14 @@ impl std::str::FromStr for ToolCategory {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct ConnectionPolicyRaw {
     pub allow: Option<Vec<ToolCategory>>,
+    #[serde(rename = "mcpTemplate")]
+    pub mcp_template: Option<McpTemplate>,
+    #[serde(rename = "dataPolicy")]
+    pub data_policy: Option<DataPolicy>,
+    #[serde(rename = "globalBlocklist", default)]
+    pub global_blocklist: Vec<String>,
+    #[serde(rename = "dataPolicyKillAllowlist", default)]
+    pub data_policy_kill_allowlist: Vec<String>,
 }
 
 /// Per-connection policy config from `[policy.<server-name>]` in `.iris-agentic-dev.toml`.
@@ -123,6 +155,14 @@ pub struct ConnectionPolicy {
     pub server_name: String,
     /// Allowlist of permitted categories. `None` = all permitted.
     pub allow: Option<Vec<ToolCategory>>,
+    /// Environment template gate. `None` → `Dev` (all tools permitted).
+    pub mcp_template: Option<McpTemplate>,
+    /// PHI data policy. `None` → `Block` (PHI-capable tools blocked by default).
+    pub data_policy: Option<DataPolicy>,
+    /// Per-connection additional global blocklist patterns (extends system blocklist).
+    pub global_blocklist: Vec<String>,
+    /// Patterns exempted from kill-operation blocklist check only.
+    pub data_policy_kill_allowlist: Vec<String>,
 }
 
 /// Top-level fleet config. Wraps WorkspaceConfig for backward-compatible develop mode.
@@ -270,6 +310,10 @@ pub fn load_fleet_config_from_str(contents: &str) -> Result<FleetConfig, toml::d
             ConnectionPolicy {
                 server_name: name.clone(),
                 allow: raw.allow.clone(),
+                mcp_template: raw.mcp_template.clone(),
+                data_policy: raw.data_policy.clone(),
+                global_blocklist: raw.global_blocklist.clone(),
+                data_policy_kill_allowlist: raw.data_policy_kill_allowlist.clone(),
             },
         );
     }

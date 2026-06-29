@@ -2,8 +2,56 @@
 //!
 //! One entry per tool call on any connection that has an active `[policy.<server-name>]` block.
 //! Write failures are non-blocking — a warning is emitted and the tool call proceeds normally.
+//! PHI-named globals and credential fields are scrubbed before writing (FR-010, 051-phi-policy-env-gates).
 
 use std::path::PathBuf;
+
+/// Credential/sensitive field names redacted with `[REDACTED]`.
+const CREDENTIAL_FIELDS: &[&str] = &[
+    "password",
+    "token",
+    "api_key",
+    "secret",
+    "access_token",
+    "auth_token",
+];
+
+/// Scrub PHI global names and credential fields from a params JSON object before audit logging.
+///
+/// - `global_name` field: replaced with `"[REDACTED-PHI]"` if it matches a PHI name pattern.
+/// - Credential fields: replaced with `"[REDACTED]"`.
+/// - All other fields: unchanged.
+pub fn scrub_params(params: serde_json::Value) -> serde_json::Value {
+    let obj = match params.as_object() {
+        Some(o) => o,
+        None => return params,
+    };
+
+    let mut out = serde_json::Map::with_capacity(obj.len());
+    for (key, val) in obj {
+        let scrubbed = if CREDENTIAL_FIELDS.contains(&key.as_str()) {
+            serde_json::Value::String("[REDACTED]".to_string())
+        } else if key == "global_name" {
+            if let Some(name) = val.as_str() {
+                let normalized = name.strip_prefix('^').unwrap_or(name);
+                if crate::policy::patterns::matches_any(
+                    normalized,
+                    crate::policy::patterns::PHI_NAME_PATTERNS,
+                ) {
+                    serde_json::Value::String("[REDACTED-PHI]".to_string())
+                } else {
+                    val.clone()
+                }
+            } else {
+                val.clone()
+            }
+        } else {
+            val.clone()
+        };
+        out.insert(key.clone(), scrubbed);
+    }
+    serde_json::Value::Object(out)
+}
 
 /// A single audit log entry. Serialized as one JSONL line.
 #[derive(Debug, serde::Serialize)]
@@ -68,7 +116,20 @@ impl AuditLog {
             std::fs::create_dir_all(parent)?;
         }
 
-        let line = serde_json::to_string(entry).map_err(std::io::Error::other)?;
+        // Build a scrubbed version for serialization — PHI and credentials replaced inline.
+        let scrubbed_params = scrub_params(entry.params.clone());
+        let scrubbed_entry = AuditLogEntry {
+            ts: entry.ts.clone(),
+            tool: entry.tool.clone(),
+            connection: entry.connection.clone(),
+            namespace: entry.namespace.clone(),
+            status: entry.status.clone(),
+            gate: entry.gate.clone(),
+            allowed_categories: entry.allowed_categories.clone(),
+            params: scrubbed_params,
+        };
+
+        let line = serde_json::to_string(&scrubbed_entry).map_err(std::io::Error::other)?;
 
         // O_APPEND is atomic on macOS and Windows for small writes (< PIPE_BUF).
         // On Linux, concurrent open-append-close from two MCP clients (e.g. Claude Desktop
