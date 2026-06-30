@@ -39,6 +39,7 @@ impl std::ops::Deref for AnyParams {
 pub mod admin;
 pub mod dict;
 pub mod doc;
+pub mod global;
 pub mod info;
 pub mod interop;
 pub mod log_store;
@@ -1428,9 +1429,8 @@ impl IrisTools {
     /// Returns the set of tool names registered for the current toolset.
     /// Used by tests and by the benchmark harness to build valid_tool_names.
     pub fn registered_tool_names(&self) -> std::collections::HashSet<String> {
-        // Authoritative baseline list — 34 tools matching v0.4.x (audit 2026-04-28).
-        // REST(14) + Docker(16) + Local(4) = 34
-        // 34 - stubs(4) = nostub(30); 30 - merged_removed(10) + merged_added(4) = merged(24)
+        // Authoritative baseline list — 35 tools (052: +iris_global).
+        // 35 - stubs(4) = nostub(31); 31 - merged_removed(4) + merged_added(5) = merged(32)
         // Note: iris_symbols_local is no longer a stub (025-symbols-local-ts)
         let all_tools: &[&str] = &[
             // REST — 14
@@ -1477,6 +1477,8 @@ impl IrisTools {
             "iris_admin",
             // 034-live-connection-reload
             "check_config",
+            // 052-iris-global
+            "iris_global",
         ];
 
         // Tools removed in nostub — 4 stubs returning NOT_IMPLEMENTED
@@ -1504,6 +1506,8 @@ impl IrisTools {
             "iris_admin",
             // 027-progressive-disclosure
             "iris_get_log",
+            // 052-iris-global
+            "iris_global",
         ];
 
         let mut names: std::collections::HashSet<String> =
@@ -1600,6 +1604,8 @@ impl IrisTools {
                 "iris_admin",
                 // 027-progressive-disclosure
                 "iris_get_log",
+                // 052-iris-global
+                "iris_global",
             ];
             for name in merged_only {
                 router.remove_route(name);
@@ -4391,6 +4397,58 @@ Methods:
         result
     }
 
+    // ── 052: iris_global ───────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Read, write, kill, or list IRIS global nodes. action: get=read a node or subtree, set=write a node, kill=delete a node/subtree, list=enumerate subscripts. PHI and system-blocklist gates enforced before any IRIS call. Pass acknowledgePhi=true to bypass per-global PHI gate."
+    )]
+    async fn iris_global(
+        &self,
+        Parameters(p): Parameters<global::IrisGlobalParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let iris = self.get_iris_reloaded().await?;
+        let (sm_server, policy) = self.active_server_manager_policy();
+        let params_json = serde_json::json!({
+            "action": p.action,
+            "global_name": p.global_name,
+            "subscripts": p.subscripts,
+            "acknowledgePhi": p.acknowledge_phi.unwrap_or(false),
+        });
+        let gate = crate::policy::gate::dispatch_gate(
+            "iris_global",
+            sm_server.as_deref().unwrap_or(""),
+            policy.as_ref(),
+            &params_json,
+        );
+        if let Err(ref gate_err) = gate {
+            self.write_audit_entry(
+                "iris_global",
+                sm_server.as_deref().unwrap_or(""),
+                policy.as_ref(),
+                "blocked",
+                Some("policy"),
+                None,
+                params_json.clone(),
+            );
+            return ok_json(gate_err.clone());
+        }
+        let result = global::handle_iris_global(&iris, &self.client, &p, gate).await;
+        self.write_audit_entry(
+            "iris_global",
+            sm_server.as_deref().unwrap_or(""),
+            policy.as_ref(),
+            if result["success"].as_bool().unwrap_or(false) {
+                "ok"
+            } else {
+                "error"
+            },
+            None,
+            None,
+            params_json,
+        );
+        ok_json(result)
+    }
+
     // ── Merged tools (T029–T032, registered only when IRIS_TOOLSET=merged) ─────
     // These are always present in the #[tool_router] but removed via remove_route()
     // for Baseline and Nostub toolsets in with_registry_and_toolset().
@@ -6708,6 +6766,7 @@ impl IrisTools {
         dispatch!("skill_propose", NoParams, skill_propose);
         dispatch!("skill_optimize", SkillNameParams, skill_optimize);
         dispatch!("skill_share", SkillNameParams, skill_share);
+        dispatch!("iris_global", global::IrisGlobalParams, iris_global);
         Err(format!("unknown tool: {tool}"))
     }
 }

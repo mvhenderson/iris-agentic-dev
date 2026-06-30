@@ -36,13 +36,13 @@ Load `skills/objectscript-review/SKILL.md` if available. Otherwise apply this ch
 
 ### Methods & Variables
 
-4. **Intra-class method calls require `..`** — Inside a method, call `Do ..MyMethod()` not `Do MyMethod()`. `##class(Same.Class).MyMethod()` also works but `..` is idiomatic for same-class calls.
+1. **Intra-class method calls require `..`** — Inside a method, call `Do ..MyMethod()` not `Do MyMethod()`. `##class(Same.Class).MyMethod()` also works but `..` is idiomatic for same-class calls.
 2. **`NEW` is illegal inside methods** — Never use `New varname` inside a method body; method/procedure blocks are already isolated in scope.
 3. **Instance variables** — `i%PropertyName` accesses the raw slot directly; `..PropertyName` goes through the accessor. Prefer `..PropertyName` unless you have a specific reason not to.
 
 ### Error Handling
 
-7. **`%Status` return convention** — Methods that can fail return `%Status`. Check with `$$$ISOK(sc)` / `$$$ISERR(sc)`. Return `$$$OK` on success. Never compare `If sc=0`; always use the macros.
+1. **`%Status` return convention** — Methods that can fail return `%Status`. Check with `$$$ISOK(sc)` / `$$$ISERR(sc)`. Return `$$$OK` on success. Never compare `If sc=0`; always use the macros.
 2. **Throwing and catching** — Use `$$$ThrowOnError(sc)` to throw on failure. Never `Throw sc` directly — `THROW` expects a `%Exception.AbstractException`. Correct pattern:
 
    ```objectscript
@@ -52,6 +52,7 @@ Load `skills/objectscript-review/SKILL.md` if available. Otherwise apply this ch
        Set sc = ex.AsStatus()
    }
    ```
+
 3. **Transaction discipline** — Always check `$TLEVEL` before rolling back. Standard pattern:
 
    ```objectscript
@@ -67,7 +68,7 @@ Load `skills/objectscript-review/SKILL.md` if available. Otherwise apply this ch
 
 ### Types & Formats
 
-10. **`%TimeStamp` format** — `%TimeStamp` uses `YYYY-MM-DD HH:MM:SS` (a space, not `T`). **Not** ISO 8601 with `T`. This is the most common AI mistake. Always use space-separated format for any IRIS date/time literal.
+1. **`%TimeStamp` format** — `%TimeStamp` uses `YYYY-MM-DD HH:MM:SS` (a space, not `T`). **Not** ISO 8601 with `T`. This is the most common AI mistake. Always use space-separated format for any IRIS date/time literal.
 2. **String concatenation** — Use `_` to concatenate strings: `"Hello" _ " " _ name`. There is no `+` for strings.
 3. **Globals vs locals** — `^GlobalName` is database-persistent and shared across processes. Local variables (`var`) are process-scoped and temporary. Never use globals as temporary variables.
 4. **`$LISTNEXT` for list iteration** — To iterate a `%List`, use `$LISTNEXT(list, ptr, value)` with `Set ptr=0` before the loop. Do not use `FOR i=1:1:$LISTLENGTH(list)` — it is slower and error-prone for embedded lists.
@@ -99,6 +100,15 @@ iris_test(pattern="MyPackage.Tests.*")
 # If IRIS is unreachable — list containers and pick the right one
 iris_list_containers()
 iris_select_container(name="arno_iris_test")   # reconnects without restart
+
+# Read / write / delete IRIS global variables (Merged tier only, requires HTTP connection)
+iris_global(action="get", global_name="MyApp", subscripts=["key1"])
+iris_global(action="get", global_name="MyApp", subtree=true, max_nodes=200)
+iris_global(action="set", global_name="MyApp", subscripts=["key1"], value="hello")
+iris_global(action="kill", global_name="MyApp", subscripts=["key1"])
+iris_global(action="list", global_name="MyApp", max_subscripts=50)
+# PHI globals require explicit acknowledgement:
+iris_global(action="get", global_name="PAPMI", subscripts=["123"], acknowledgePhi=true)
 ```
 
 **Do NOT use `docker exec` / `docker cp` / `iris session` bash commands when the MCP is connected.** The MCP handles container targeting automatically after `iris_select_container`.
@@ -356,6 +366,9 @@ Error codes returned in the `error_code` field of tool responses. All follow `SC
 | `DATA_POLICY_BLOCKED` | `dataPolicy=block` (default) prevents bulk-PHI tool | `tool`, `policy`, `remediation` |
 | `SYSTEM_BLOCKLIST` | Global name matches system or per-connection blocklist | `global_name`, `matched_pattern` |
 | `PHI_GATE_BLOCKED` | Global name matches PHI name pattern; pass `acknowledgePhi=true` to proceed | `global_name`, `matched_pattern`, `remediation` |
+| `INVALID_SUBSCRIPT` | `iris_global` subscript contains disallowed characters (allowed: `a-z A-Z 0-9 space . _ : -`) | `subscript`, `pattern` |
+| `INVALID_ACTION` | `iris_global` action not one of `get`, `set`, `kill`, `list` | `action` |
+| `INVALID_PARAMS` | Required parameter missing (e.g. `action=set` without `value`) | — |
 | `READ_ERROR` | Could not read local source file | `path` |
 | `UPLOAD_FAILED` | Atelier PUT rejected the document | `document`, `http_status` |
 | `CONTAINER_NOT_FOUND` | Named container not running in Docker | `container` |

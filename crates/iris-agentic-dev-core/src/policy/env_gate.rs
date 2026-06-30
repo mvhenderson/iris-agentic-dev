@@ -16,11 +16,16 @@ const TEST_BLOCKED: &[ToolCategory] = &[ToolCategory::Execute, ToolCategory::Com
 
 /// Check whether `tool_name` is blocked by the active `mcpTemplate`.
 ///
+/// `params` is the full tool call parameters; used for action-aware category overrides
+/// (e.g. `iris_global` with `action=set` is classified as `Execute` even though
+/// the default category is `Query`).
+///
 /// Returns `Some(error_json)` when blocked, `None` when permitted.
 pub fn check_env_gate(
     tool_name: &str,
     template: &McpTemplate,
     server_name: &str,
+    params: &serde_json::Value,
 ) -> Option<serde_json::Value> {
     let blocked = match template {
         McpTemplate::Dev => return None,
@@ -28,7 +33,17 @@ pub fn check_env_gate(
         McpTemplate::Test => TEST_BLOCKED,
     };
 
-    let category = crate::iris::server_manager::tool_to_category_pub(tool_name)?;
+    let mut category = crate::iris::server_manager::tool_to_category_pub(tool_name)?;
+
+    // Action-aware override for iris_global: set/kill are write operations → Execute.
+    if tool_name == "iris_global" {
+        if let Some(action) = params.get("action").and_then(|v| v.as_str()) {
+            if action == "set" || action == "kill" {
+                category = ToolCategory::Execute;
+            }
+        }
+    }
+
     if blocked.contains(&category) {
         let template_str = match template {
             McpTemplate::Dev => "dev",

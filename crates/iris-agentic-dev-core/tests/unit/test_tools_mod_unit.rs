@@ -251,4 +251,9 @@ fn iris_tools_registered_tool_names_non_empty() {
         names.contains("check_config"),
         "check_config must be registered"
     );
+    // 052: iris_global must appear in the Merged toolset inventory
+    assert!(
+        names.contains("iris_global"),
+        "iris_global must be registered (052-iris-global)"
+    );
 }

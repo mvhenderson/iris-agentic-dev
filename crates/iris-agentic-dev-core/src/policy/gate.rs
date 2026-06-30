@@ -44,7 +44,9 @@ pub fn dispatch_gate(
         .mcp_template
         .as_ref()
         .unwrap_or(&crate::iris::workspace_config::McpTemplate::Dev);
-    if let Some(err) = crate::policy::env_gate::check_env_gate(tool_name, template, server_name) {
+    if let Some(err) =
+        crate::policy::env_gate::check_env_gate(tool_name, template, server_name, params)
+    {
         return Err(err);
     }
 

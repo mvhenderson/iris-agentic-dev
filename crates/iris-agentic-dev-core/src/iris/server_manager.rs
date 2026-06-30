@@ -432,6 +432,8 @@ fn tool_to_category(tool_name: &str) -> Option<crate::iris::workspace_config::To
         "skill_list" | "skill_describe" | "skill_search" | "skill_forget" | "skill_propose"
         | "skill_optimize" | "skill_share" | "agent_history" | "agent_stats" => ToolCategory::Skill,
         "kb_recall" | "kb_index" => ToolCategory::Kb,
+        // 052: get/list are Query; set/kill override to Execute in check_env_gate
+        "iris_global" => ToolCategory::Query,
         _ => return None, // unknown tool — not gated
     })
 }

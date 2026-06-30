@@ -15,7 +15,12 @@ use iris_agentic_dev_core::policy::env_gate::check_env_gate;
 
 #[test]
 fn live_blocks_iris_execute() {
-    let r = check_env_gate("iris_execute", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "iris_execute",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_some(), "live must block iris_execute");
     let j = r.unwrap();
     assert_eq!(j["error_code"], "ENV_GATE_BLOCKED");
@@ -26,51 +31,91 @@ fn live_blocks_iris_execute() {
 
 #[test]
 fn live_blocks_iris_compile() {
-    let r = check_env_gate("iris_compile", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "iris_compile",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_some(), "live must block iris_compile");
     assert_eq!(r.unwrap()["blocked_category"], "compile");
 }
 
 #[test]
 fn live_blocks_iris_source_control() {
-    let r = check_env_gate("iris_source_control", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "iris_source_control",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_some(), "live must block iris_source_control");
     assert_eq!(r.unwrap()["blocked_category"], "source_control");
 }
 
 #[test]
 fn live_permits_iris_query() {
-    let r = check_env_gate("iris_query", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "iris_query",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "live must permit iris_query");
 }
 
 #[test]
 fn live_permits_iris_search() {
-    let r = check_env_gate("iris_search", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "iris_search",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "live must permit iris_search");
 }
 
 #[test]
 fn live_permits_docs_introspect() {
-    let r = check_env_gate("docs_introspect", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "docs_introspect",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "live must permit docs_introspect");
 }
 
 #[test]
 fn live_permits_debug_capture_packet() {
-    let r = check_env_gate("debug_capture_packet", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "debug_capture_packet",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "live must permit debug tools");
 }
 
 #[test]
 fn live_permits_skill_list() {
-    let r = check_env_gate("skill_list", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "skill_list",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "live must permit skill tools");
 }
 
 #[test]
 fn live_permits_kb_recall() {
-    let r = check_env_gate("kb_recall", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "kb_recall",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "live must permit KB tools");
 }
 
@@ -78,26 +123,46 @@ fn live_permits_kb_recall() {
 
 #[test]
 fn test_blocks_iris_execute() {
-    let r = check_env_gate("iris_execute", &McpTemplate::Test, "iris-staging");
+    let r = check_env_gate(
+        "iris_execute",
+        &McpTemplate::Test,
+        "iris-staging",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_some(), "test must block iris_execute");
     assert_eq!(r.unwrap()["template"], "test");
 }
 
 #[test]
 fn test_blocks_iris_compile() {
-    let r = check_env_gate("iris_compile", &McpTemplate::Test, "iris-staging");
+    let r = check_env_gate(
+        "iris_compile",
+        &McpTemplate::Test,
+        "iris-staging",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_some(), "test must block iris_compile");
 }
 
 #[test]
 fn test_permits_iris_source_control() {
-    let r = check_env_gate("iris_source_control", &McpTemplate::Test, "iris-staging");
+    let r = check_env_gate(
+        "iris_source_control",
+        &McpTemplate::Test,
+        "iris-staging",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "test must permit iris_source_control");
 }
 
 #[test]
 fn test_permits_iris_query() {
-    let r = check_env_gate("iris_query", &McpTemplate::Test, "iris-staging");
+    let r = check_env_gate(
+        "iris_query",
+        &McpTemplate::Test,
+        "iris-staging",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "test must permit iris_query");
 }
 
@@ -115,7 +180,7 @@ fn dev_permits_all_tools() {
         "skill_list",
         "kb_recall",
     ] {
-        let r = check_env_gate(tool, &McpTemplate::Dev, "local");
+        let r = check_env_gate(tool, &McpTemplate::Dev, "local", &serde_json::Value::Null);
         assert!(r.is_none(), "dev must permit {tool}");
     }
 }
@@ -124,7 +189,12 @@ fn dev_permits_all_tools() {
 
 #[test]
 fn unknown_tool_not_blocked_in_live() {
-    let r = check_env_gate("nonexistent_tool_xyz", &McpTemplate::Live, "iris-prod");
+    let r = check_env_gate(
+        "nonexistent_tool_xyz",
+        &McpTemplate::Live,
+        "iris-prod",
+        &serde_json::Value::Null,
+    );
     assert!(r.is_none(), "unknown tool: no category → not blocked");
 }
 
@@ -132,7 +202,13 @@ fn unknown_tool_not_blocked_in_live() {
 
 #[test]
 fn error_json_includes_all_required_fields() {
-    let r = check_env_gate("iris_execute", &McpTemplate::Live, "prod-server").unwrap();
+    let r = check_env_gate(
+        "iris_execute",
+        &McpTemplate::Live,
+        "prod-server",
+        &serde_json::Value::Null,
+    )
+    .unwrap();
     for field in &[
         "error_code",
         "env_gate_blocked",
@@ -152,7 +228,13 @@ fn error_json_includes_all_required_fields() {
 
 #[test]
 fn error_json_server_name_matches_input() {
-    let r = check_env_gate("iris_compile", &McpTemplate::Live, "custom-server").unwrap();
+    let r = check_env_gate(
+        "iris_compile",
+        &McpTemplate::Live,
+        "custom-server",
+        &serde_json::Value::Null,
+    )
+    .unwrap();
     assert_eq!(r["server_name"], "custom-server");
 }
 
