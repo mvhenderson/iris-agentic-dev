@@ -67,59 +67,78 @@ All five actions use a single ObjectScript code block submitted to `execute_via_
 
 ### view_locks
 
-Query `%SYS.ProcessQuery` or `^LOCK` for active locks. Prefer the SQL view if available:
+`%SYS.LockQuery` is **not a SQL table** — it is an abstract class with named queries.
+Use the `%SYS.LockQuery:Detail` class query via `%ResultSet`:
 
-```sql
-SELECT Resource, Owner, LockType, LockMode, OwnerName
-FROM %SYS.LockQuery
-ORDER BY Resource
+```objectscript
+Set rs = ##class(%ResultSet).%New("%SYS.LockQuery:Detail")
+Do rs.Execute()
+While rs.Next() {
+  // columns: Name, Owner, Type, Mode, OwnerName (verify at impl time)
+}
 ```
+
+Map `Name`→`resource`, `Owner`→`owner_pid`, `Type`→`lock_type`,
+`Mode`→`lock_mode`, `OwnerName`→`owner_username`.
 
 ### view_processes
 
+SQL table confirmed (`%SYS.ProcessQuery`, SQLCODE 0). **Corrected column names**
+(verified on IRIS 2026.2):
+
 ```sql
-SELECT Pid, Username, Namespace, State, ClientName, ClientIPAddress, Routine
+SELECT Pid, UserName, NameSpace, State, ClientNodeName, ClientIPAddress, Routine
 FROM %SYS.ProcessQuery
 ORDER BY Pid
 ```
 
-Apply optional namespace filter: `WHERE Namespace = :namespace`.
+Optional namespace filter: `WHERE NameSpace = :namespace`. Note: column is `NameSpace`
+(capital S), not `Namespace`. `ClientNodeName` not `ClientName`.
+Redact fields: `UserName`, `ClientNodeName`, `ClientIPAddress`.
 
 ### journal_search
 
-```objectscript
-// Use %SYS.Journal.Record iterator or SQL table
-SELECT GlobalRef, Value, TransactionID, TimeStamp, OperationType
-FROM %SYS.Journal.Record
-WHERE GlobalRef LIKE :global_pattern
-  AND TimeStamp BETWEEN :from AND :to
-ORDER BY TimeStamp
-```
+`%SYS.Journal.Record` has **no SQL projection** (SQLCODE -30). `%SYS.Journal.File`
+also has no SQL table. The `%SYS.Journal.Record` class properties do **not** include
+`GlobalReference` — the assumed field does not exist. Use `%SYS.Journal.File:Search`
+named query, but column set must be verified against a non-empty journal at
+implementation time. See `research.md` for details.
 
-Translate glob `*` → SQL `%` in Rust. Execute in `%SYS` regardless of connection
-namespace.
+**Implementation note**: `journal_search` is higher complexity than originally planned.
+Verify `%SYS.Journal.File:Search` columns before implementing T034.
 
 ### namespace_mappings
 
+All three SQL tables confirmed (SQLCODE 0). **Corrected column names**
+(verified on IRIS 2026.2) — all three use `Database`, not `GlobalDatabase` /
+`PackageDatabase` / `RoutineDatabase`:
+
 ```sql
-SELECT Name, GlobalDatabase FROM Config.MapGlobals WHERE Namespace = :ns
-SELECT Name, PackageDatabase FROM Config.MapPackages WHERE Namespace = :ns
-SELECT Name, RoutineDatabase FROM Config.MapRoutines WHERE Namespace = :ns
+SELECT Name, Database FROM Config.MapGlobals WHERE Namespace = :ns
+SELECT Name, Database FROM Config.MapPackages WHERE Namespace = :ns
+SELECT Name, Database FROM Config.MapRoutines WHERE Namespace = :ns
+SELECT Name FROM Config.Namespaces WHERE Name = :ns  -- existence check
 ```
 
-If all three return empty and namespace does not appear in `Config.Namespaces`, return
-`NAMESPACE_NOT_FOUND`.
+SQLCODE 100 on the Namespaces query = namespace not found → return `NAMESPACE_NOT_FOUND`.
 
 ### database_status
 
-```sql
-SELECT Name, Directory, Mounted, FreeBD, Journal, MirrorStatus
-FROM SYS.Database
-ORDER BY Name
+`SYS.Database` is **not a SQL table** (SQLCODE -30). Use the `SYS.Database:FreeSpace`
+class query for runtime status and `SYS.Database:List` for mirror/encryption state:
+
+```objectscript
+Set rs = ##class(%ResultSet).%New("SYS.Database:FreeSpace")
+Do rs.Execute("*")
+// columns: DatabaseName, Directory, MaxSize, Size, ExpansionSize,
+//          Available, Free, DiskFreeSpace, Status, SizeInt,
+//          AvailableNum, DiskFreeSpaceNum, ReadOnly
 ```
 
-Map `FreeBD` (blocks) to `free_space_mb`; map `MirrorStatus` = NULL or absent to
-`"none"`.
+Map: `DatabaseName`→`name`, `Directory`→`directory`, `Status` contains `"Mounted"`→
+`mounted: true/false`, `AvailableNum`→`free_space_mb`, `ReadOnly`→`read_only`.
+`mirror_state`: from `SYS.Database:List` `Mirrored` column — `"0"` → `"none"`.
+Optional name filter: `Do rs.Execute(name)` (single database).
 
 ## dataPolicy Handling for view_processes
 

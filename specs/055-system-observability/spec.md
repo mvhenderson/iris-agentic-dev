@@ -2,7 +2,7 @@
 
 **Feature Branch**: `055-system-observability`
 **Created**: 2026-06-29
-**Status**: Draft
+**Status**: Implemented
 **Depends on**: 051 (PHI policy and env gates — merged), 052 (iris_global — merged)
 
 ## Overview
@@ -39,6 +39,11 @@ explicitly out of scope for v1 — too destructive.
 - Q: Journal records can number in the millions. What is the default and max result limit for journal_search? → A: Default `max_records=100`, max allowed=1000. Always require at least one filter (`global_pattern` OR `time_range`) — bare `journal_search` with no filters returns `MISSING_PARAMS` to prevent runaway queries. Consistent with spec 052 and 053 clamping patterns.
 - Q: Process list may expose client IP, username, and query text. Should PHI policy apply? → A: Yes — `view_processes` output passes through `dataPolicy` filter (block/redact/allow) per spec 051 rules. With `dataPolicy=block`, process list is blocked. With `dataPolicy=redact`, usernames and client info are redacted. With `dataPolicy=allow`, full output returned. Consistent with how other data-bearing tools handle `dataPolicy`.
 - Q: IRIS journal access requires %SYS namespace or specific privileges. Should journal_search work in any namespace or only %SYS? → A: `journal_search` always executes in `%SYS` namespace regardless of the connection namespace param — journal data lives in `%SYS`. If the connected user lacks `%SYS` privileges, IRIS returns a permission error which surfaces as `IRIS_EXECUTE_ERROR`. Document this in the spec assumptions.
+
+### Session 2026-06-30
+
+- Q: Should the five new functions live in a new `observability.rs` module or extend `admin.rs` directly? → A: New `observability.rs` module — five `pub async fn` implementations in a dedicated file, `pub mod observability` declared in `mod.rs`, dispatcher arms in the `iris_admin` match call `observability::*`. Keeps `admin.rs` focused on user/namespace/webapp management.
+- Q: Should `journal_search` use the `%SYS.Journal.Record` SQL table or the ObjectScript `%SYS.Journal.File`/`%SYS.Journal.Record` class API? → A: SQL table (`%SYS.Journal.Record`). IRIS 2023+ is an acceptable floor — the version gap is small and SQL is cleaner to maintain in Rust. Glob→SQL `LIKE` translation applies (`*`→`%`, `?`→`_`). Time range uses `BETWEEN :from AND :to` with ISO 8601 input converted to IRIS `%TimeStamp` format.
 
 ---
 
@@ -197,8 +202,9 @@ array with at least one entry containing `name`, `directory`, `mounted`, `free_s
 - **view_locks on quiet instance**: No locks active returns `locks: []`, not an error.
 - **view_processes race condition**: A process may exit between enumeration start and finish;
   partial results are acceptable — never return a structured error for a vanished PID.
-- **journal_search time range format**: Accept ISO 8601 strings (`"2026-06-29T10:00:00Z"`)
-  and IRIS `$H` horolog strings — document both in tool schema description.
+- **journal_search time range format**: Accept ISO 8601 strings only
+  (`"2026-06-29T10:00:00Z"`). Horolog input is not supported in v1. Rust converts ISO 8601
+  to `YYYY-MM-DD HH:MM:SS` before binding to the SQL `TimeStamp BETWEEN` clause.
 - **journal_search on unmounted journal**: If the journal file for the requested time range
   is not mounted, IRIS returns a permission/file error — surface as `IRIS_EXECUTE_ERROR`
   with the IRIS message.
@@ -261,9 +267,11 @@ array with at least one entry containing `name`, `directory`, `mounted`, `free_s
   (use `"none"` for `mirror_state` on non-mirrored instances).
 - **FR-016**: `database_status` MUST support an optional `name` filter param that restricts
   results to a single database, returning `DATABASE_NOT_FOUND` if the name is not found.
-- **FR-017**: All five actions MUST be implemented in `admin.rs` or a new companion
-  `observability.rs` module registered alongside `admin.rs` — they extend the existing
-  `iris_admin` dispatcher via new `action` enum values, not as separate MCP tool names.
+- **FR-017**: All five actions MUST be implemented in a new `observability.rs` module
+  (`crates/iris-agentic-dev-core/src/tools/observability.rs`), declared as
+  `pub mod observability` in `mod.rs`. The `iris_admin` dispatcher arms call
+  `observability::*` functions. Not separate MCP tool names — `iris_admin` remains the
+  single tool entry point.
 - **FR-018**: Error codes `MISSING_PARAMS`, `NAMESPACE_NOT_FOUND`, and `DATABASE_NOT_FOUND`
   MUST be added to the error code registry comment in `gate.rs` and to `AGENTS.md`
   Section 6.
@@ -324,15 +332,19 @@ array with at least one entry containing `name`, `directory`, `mounted`, `free_s
   (e.g., `%SYS.ProcessQuery`) over direct global access where SQL views exist.
 - `view_processes` uses `%SYS.ProcessQuery` SQL view or equivalent `%SYS` table, executing
   in `%SYS` namespace.
-- `journal_search` uses the IRIS `%SYS.Journal.Record` SQL table or equivalent ObjectScript
-  iterator in `%SYS` namespace. The connected IRIS user must have `%SYS` namespace access;
-  lack of access surfaces as `IRIS_EXECUTE_ERROR`.
+- `journal_search` uses the `%SYS.Journal.Record` SQL table in `%SYS` namespace.
+  IRIS 2023+ is the minimum version requirement — the SQL table is available on all
+  supported versions at that floor. The connected IRIS user must have `%SYS` namespace
+  access; lack of access surfaces as `IRIS_EXECUTE_ERROR`.
 - `namespace_mappings` queries `Config.MapGlobals`, `Config.MapPackages`, and
   `Config.MapRoutines` tables in `%SYS` namespace.
 - `database_status` queries `Config.Databases` and `SYS.Database` tables in `%SYS`
   namespace for mount state, size, and journal configuration.
-- `journal_search` `global_pattern` uses SQL `LIKE` semantics (`%` wildcard) or is
-  translated from glob (`*`) to SQL `LIKE` (`%`) in Rust before the query is built.
+- `journal_search` `global_pattern` is a glob pattern (`*` wildcard). Rust translates
+  `*` → SQL `%` and `?` → `_`, escaping any literal `%` and `_` in the input before
+  binding to `GlobalRef LIKE :pattern`. Time range uses `TimeStamp BETWEEN :from AND :to`
+  with ISO 8601 input converted to IRIS `%TimeStamp` format (`YYYY-MM-DD HH:MM:SS`).
+  Horolog input is not supported in v1 — ISO 8601 only.
 - Terminate-process and mount/dismount database are explicitly out of scope for v1.
   Both are documented as follow-on candidates (`iris_admin action=terminate_process`,
   `action=mount_database`).
