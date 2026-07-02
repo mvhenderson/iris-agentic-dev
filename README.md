@@ -112,7 +112,7 @@ username = "_SYSTEM"
 password = "SYS"
 ```
 
-**Port reference**
+#### Port reference
 
 | IRIS version | Web server | Default port |
 |---|---|---|
@@ -241,15 +241,20 @@ iris-agentic-dev resolves the IRIS connection in this order — first match wins
 
 Skills are concise instruction files that teach your AI assistant ObjectScript-specific patterns and common mistakes. They work with or without the MCP server.
 
-Tested with Claude Sonnet 4.6 on 41 tasks from real ISC codebases:
+Tested with Claude Sonnet 4.6 on the ObjectScript repair suite (22 tasks):
 
 | Benchmark suite | Baseline | With top skill | Lift |
 |-----------------|----------|----------------|------|
 | ObjectScript repair (22 tasks) | 73% | **100%** | +27% |
-| Multi-file repair (5 tasks) | 80% | **100%** | +20% |
-| IRIS SQL quirks (14 tasks) | 93% | **100%** | +7% |
 
 The top skill is **`objectscript-review`** — a 205-word checklist that catches the 10 most common ObjectScript mistakes before the AI writes any code.
+
+The multi-file and SQL-quirks suites referenced in earlier versions of this table are not
+yet ported to the current native benchmark harness (`iris-agentic-dev benchmark`) — only
+the repair suite above is runnable today. See
+[BENCHMARKING.md](./light-skills/BENCHMARKING.md) to run it yourself, including a
+[Limitations](./light-skills/BENCHMARKING.md#limitations) section covering contamination
+risk, single-run variance, and single-model validation caveats on these numbers.
 
 **VS Code Copilot:** Skills are included automatically when you install the extension.
 
@@ -294,6 +299,10 @@ done
 | `ensemble-production` | Interoperability production lifecycle, logs, queues | domain |
 | `iris-devtester` | `IRISContainer` factory methods and test fixture patterns | domain |
 
+"repair" scores are reproducible today via `iris-agentic-dev benchmark --suite jira`.
+"SQL" and "domain" scores predate the current native harness and are not yet
+re-verifiable — see [BENCHMARKING.md](./light-skills/BENCHMARKING.md#additional-suites-not-yet-ported).
+
 See [`light-skills/`](./light-skills/) for the full list, benchmark results, and how to contribute a skill.
 
 > **Note**: some skills hurt if loaded globally. `objectscript-loop-patterns` measured −19% lift when loaded for all tasks. Domain skills (`iris-vector-ai`, `iris-connectivity`, `ensemble-production`) should only be loaded when working in those areas. See [BENCHMARKING.md](./light-skills/BENCHMARKING.md).
@@ -302,30 +311,39 @@ See [`light-skills/`](./light-skills/) for the full list, benchmark results, and
 
 ## Tools
 
-Most tools work over the Atelier REST API and connect to any IRIS instance. Tools marked ✦ require `IRIS_CONTAINER` to be set.
+Most tools work over the Atelier REST API and connect to any IRIS instance — no Docker
+required unless noted. Tools marked ✦ require `IRIS_CONTAINER`. Tools marked 🔒 are
+write-gated (suppressed on Live instances unless `IRIS_ALLOW_PROD=1`).
 
-**Code**
+### Code
 
 | Tool | What it does |
 |------|-------------|
 | `iris_compile` | Compile a class, routine, or wildcard. Returns errors with line numbers. |
 | `iris_doc` | Read, write, delete, or check any IRIS document. |
 | `iris_execute` | Run ObjectScript, return output. |
-| `iris_query` | Execute SQL, return rows as JSON. |
+| `iris_execute_method` | Invoke a `ClassMethod` directly by class+method+args, no boilerplate. String-returning methods only (v1). |
+| `iris_query` | Execute SQL, return rows as JSON. `mode=explain\|count\|write` for query plans, row-count estimates, and gated DML. |
 | `iris_test` | Run `%UnitTest` tests, return structured pass/fail results. |
+| `iris_global` | Read, write, kill, or list IRIS global nodes. PHI and system-blocklist gates enforced. |
 | `iris_source_control` ✦ | Check lock status, checkout, execute SCM actions. |
 
-**Search and introspection**
+### Search and introspection
 
 | Tool | What it does |
 |------|-------------|
 | `iris_symbols` | Search classes and methods via `%Dictionary`. |
+| `iris_symbols_local` | Search `.cls`/`.mac`/`.inc` files on disk by glob pattern — no IRIS connection required. |
 | `docs_introspect` | Deep class inspection: methods, properties, XData, superclasses. |
 | `iris_search` | Full-text search across the namespace. Supports regex and category filters. |
 | `iris_info` | Namespace discovery: documents, jobs, CSP apps, metadata. |
 | `iris_macro` | Macro inspection: list, signature, definition, expand. |
+| `iris_table_info` | Inspect a SQL table: class-projected vs. DDL, backing storage globals, optional row count. |
+| `resolve_dynamic_dispatch` | Resolve `$classmethod`/`##class({var})` polymorphic dispatch to compiled candidate classes, with confidence scores. |
+| `extract_message_map_routing` | Extract a compiled Ensemble `MessageMap` routing table (MessageType → Method) from a BusinessProcess/Router. |
+| `find_subclass_implementations` | Find all concrete subclass implementations of a method across the full inheritance hierarchy. |
 
-**Debugging**
+### Debugging
 
 | Tool | What it does |
 |------|-------------|
@@ -333,7 +351,7 @@ Most tools work over the Atelier REST API and connect to any IRIS instance. Tool
 | `iris_get_log` | Retrieve a full result by `log_id` when a tool returns `truncated: true`. |
 | `check_config` | Show active connection state — host, container, config file, write tool status. |
 
-**Generation**
+### Generation
 
 | Tool | What it does |
 |------|-------------|
@@ -341,19 +359,41 @@ Most tools work over the Atelier REST API and connect to any IRIS instance. Tool
 | `iris_generate_class` | Generate and compile a class from a description (requires LLM API key). |
 | `iris_generate_test` | Generate `%UnitTest` scaffolding for an existing class. |
 
-**Interoperability** ✦
+### Interoperability
 
 | Tool | What it does |
 |------|-------------|
-| `iris_production` | Start, stop, update, check, or recover a production. |
-| `iris_interop_query` | Query production logs, queue depths, or message archive. |
+| `iris_production` ✦ | Start, stop, update, check, or recover a production. |
+| `iris_interop_query` ✦ | Query production logs, queue depths, or message archive. |
+| `iris_production_item` 🔒 | Enable, disable, or get/set settings on an individual production config item. Works via HTTP, no Docker required. |
+| `iris_production_diff` | Diff the running production config against the last source-controlled version. |
+| `iris_message_body` | Read a message body by ID (plain-text or stream-backed). PHI-gated. |
+| `iris_business_rule_info` | List or inspect Ensemble business rules (`Ens.Rule.RuleSet`). |
+| `iris_credential_list` | List Ensemble credentials (IDs/usernames only — passwords never returned). |
+| `iris_credential_manage` 🔒 | Create, update, or delete an Ensemble credential. |
+| `iris_lookup_manage` | Read, write, delete, or list Ensemble lookup table entries (write actions gated). |
+| `iris_lookup_transfer` | Export or import an Ensemble lookup table as XML (import gated). |
 
-**Administration**
+### Administration
 
 | Tool | What it does |
 |------|-------------|
 | `iris_admin` | List namespaces, databases, users, roles, web apps; create/delete users (requires `IRIS_ADMIN_TOOLS=1`). |
 | `iris_containers` ✦ | List, select, or start IRIS Docker containers. Hot-swaps the active connection without a session restart. |
+
+### Learning agent, skills, and knowledge base
+
+| Tool | What it does |
+|------|-------------|
+| `agent_history` | Recent tool-call history for the current session (tool, success, duration, timestamp). |
+| `agent_stats` | Learning agent status: skill count, pattern count, KB size. |
+| `telemetry_query` | Query the durable telemetry record beyond the in-memory session — by tool name, session id, or time range. |
+| `telemetry_export_trace` | Export recorded tool calls as `{from, to, via, count, ts}` dispatch-trace records, aggregated. |
+| `skill` | Manage the learning agent skill registry: list, describe, search, forget, or propose (mines recent calls into a new skill). |
+| `skill_community` | Browse or install community skills published to subscribed GitHub repos. |
+| `kb` | Index markdown/text into the IRIS knowledge base, or recall content by keyword. |
+
+See [`light-skills/BENCHMARKING.md`](./light-skills/BENCHMARKING.md) for the benchmark harness.
 
 ---
 
@@ -385,6 +425,8 @@ A 404 on `/api/atelier/v8/...` usually indicates the Recurse setting or a missin
 iris-agentic-dev mcp                     # Start the MCP server
 iris-agentic-dev compile MyApp.Foo.cls   # Compile from the terminal
 iris-agentic-dev init                    # Generate .iris-agentic-dev.toml from running containers
+iris-agentic-dev install                 # Install packages from iris-dev.toml
+iris-agentic-dev benchmark --skill <path> --baseline   # Run the skill benchmark harness
 iris-agentic-dev --version               # Print version
 ```
 
