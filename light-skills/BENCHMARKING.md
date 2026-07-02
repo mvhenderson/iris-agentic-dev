@@ -166,6 +166,44 @@ never silently counts against your score.
 - `0% to +5%` → marginal, probably too broad or too narrow
 - **Negative lift** → the skill is hurting on tasks where it isn't relevant; load on demand only, not globally
 
+**Noise floor**: with only 22 tasks, each task is worth ~4.5 points of pass_rate. A single
+LLM call per task is stochastic — the same skill run twice can land a few points apart with
+no real change. Treat lift below ~±9% (roughly 2 tasks' worth) as noise, not signal, unless
+you've run the suite multiple times and it holds up. If you're deciding between two skills
+and the gap is inside that band, run `--baseline` a second time before trusting the number.
+
+---
+
+## Limitations
+
+This is a small, homegrown suite, not a rigorous capability benchmark — read results
+accordingly:
+
+- **Contamination**: the 22 tasks are public, in this repo, on GitHub. If a model has seen
+  this repo (or a fork/mirror of it) during training, it can pass tasks by recalling the
+  fix rather than reasoning about the bug, inflating `pass_rate` for reasons that have
+  nothing to do with your skill. This is the same failure mode documented for HumanEval
+  ([Riddell et al., 2024](https://arxiv.org/html/2412.01526v1)) once its tasks became
+  widely circulated. There's no mitigation for this today — a future version may hold back
+  a private subset for spot-checking.
+- **Single-run, no variance estimate**: each `pass_rate` here is one pass through the
+  suite with one model call per task, not a mean over repeated runs. Model output is
+  stochastic, so a single number overstates precision — see the noise-floor note above.
+- **Single-model validation**: this harness has only been run end-to-end against one model
+  family. A skill's lift on model A says nothing about its lift on model B — per
+  [Anthropic's framing](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents),
+  you're always evaluating harness + model together, never the model (or skill) in
+  isolation.
+- **Task selection is not systematic**: all 22 tasks came from one task-generation pass,
+  not a curated, diversity-checked sample the way
+  [SWE-bench Verified](https://www.swebench.com/verified.html) is human-filtered for
+  representativeness. Expect gaps in bug-type coverage.
+
+None of this means the numbers are useless — a `+20%` lift that survives a couple of
+reruns is real signal. It means don't cite a single run's `pass_rate` as a general claim
+about a skill's quality, and don't be surprised if results don't fully replicate on a
+different model or a larger, less contamination-prone suite.
+
 ---
 
 ## Writing a Skill That Will Score Well
