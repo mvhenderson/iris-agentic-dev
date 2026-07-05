@@ -140,6 +140,18 @@ fn parse_run_all_output(output: &str) -> (bool, String) {
     (false, format!("no result: {output}"))
 }
 
+/// Confirms an `IrisConnection` is reachable — used by the CLI subcommand before
+/// starting a run, mirroring the connection-check step every other subcommand performs.
+pub async fn confirm_reachable(
+    iris: &Arc<IrisConnection>,
+    client: &reqwest::Client,
+) -> anyhow::Result<()> {
+    iris.execute_via_generator("write 1", "USER", client)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("IRIS_UNREACHABLE: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,16 +193,4 @@ mod tests {
         assert!(!passed);
         assert!(detail.contains("no result"));
     }
-}
-
-/// Confirms an `IrisConnection` is reachable — used by the CLI subcommand before
-/// starting a run, mirroring the connection-check step every other subcommand performs.
-pub async fn confirm_reachable(
-    iris: &Arc<IrisConnection>,
-    client: &reqwest::Client,
-) -> anyhow::Result<()> {
-    iris.execute_via_generator("write 1", "USER", client)
-        .await
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("IRIS_UNREACHABLE: {e}"))
 }
