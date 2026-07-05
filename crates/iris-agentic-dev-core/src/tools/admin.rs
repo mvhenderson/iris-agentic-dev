@@ -918,7 +918,7 @@ mod tests {
     fn test_ok_json_number_values() {
         let v = serde_json::json!({
             "int_val": 42,
-            "float_val": 3.14,
+            "float_val": 2.5,
             "negative": -10,
             "zero": 0
         });

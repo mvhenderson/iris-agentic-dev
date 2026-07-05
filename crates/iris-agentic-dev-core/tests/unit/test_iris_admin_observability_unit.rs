@@ -250,7 +250,7 @@ async fn journal_search_redact_returns_data_policy_blocked() {
 fn journal_search_max_records_clamped() {
     let cap = Some(5000u64).map(|n| n.min(1000)).unwrap_or(100);
     assert_eq!(cap, 1000);
-    let cap_default: u64 = None::<u64>.unwrap_or(100).min(1000);
+    let cap_default: u64 = 100;
     assert_eq!(cap_default, 100);
 }
 

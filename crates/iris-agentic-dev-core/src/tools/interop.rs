@@ -2761,11 +2761,7 @@ mod tests {
         let mut parts = line.splitn(2, '=');
         let k = parts.next().unwrap_or("").trim().to_string();
         let _v = parts.next().unwrap_or("").to_string();
-        if k.is_empty() {
-            assert!(true); // filtered out
-        } else {
-            assert!(false, "empty key should be filtered");
-        }
+        assert!(k.is_empty(), "empty key should be filtered");
     }
 
     #[test]

@@ -548,7 +548,7 @@ fn truncate_body_exactly_equal_to_limit() {
 #[test]
 fn truncate_body_max_bytes_one_byte() {
     let body = "abc";
-    let (out, was_truncated, original_len) = truncate_body(&body, 1);
+    let (out, was_truncated, original_len) = truncate_body(body, 1);
     assert_eq!(out, "a");
     assert!(was_truncated);
     assert_eq!(original_len, 3);
@@ -557,7 +557,7 @@ fn truncate_body_max_bytes_one_byte() {
 #[test]
 fn truncate_body_max_bytes_larger_by_one() {
     let body = "abc";
-    let (out, was_truncated, original_len) = truncate_body(&body, 4);
+    let (out, was_truncated, original_len) = truncate_body(body, 4);
     assert_eq!(out, "abc");
     assert!(!was_truncated);
     assert_eq!(original_len, 3);
@@ -567,7 +567,7 @@ fn truncate_body_max_bytes_larger_by_one() {
 fn truncate_body_multi_byte_utf8_at_boundary() {
     // Test with emoji (4 bytes in UTF-8) at boundary
     let body = "ab😀cd"; // a,b = 1 byte, 😀 = 4 bytes, c,d = 1 byte (total 8 bytes)
-    let (out, was_truncated, original_len) = truncate_body(&body, 2);
+    let (out, was_truncated, original_len) = truncate_body(body, 2);
     // Truncating to 2 bytes should give "ab" without the emoji
     assert_eq!(out, "ab");
     assert!(was_truncated);
@@ -579,7 +579,7 @@ fn truncate_body_multi_byte_utf8_at_boundary() {
 fn truncate_body_multi_byte_first_char() {
     // If first character is multi-byte and max_bytes < first char size
     let body = "😀abc"; // 4 + 1 + 1 + 1 = 7 bytes
-    let (out, was_truncated, original_len) = truncate_body(&body, 1);
+    let (out, was_truncated, original_len) = truncate_body(body, 1);
     // Should truncate to empty string rather than panic (no valid 1-byte boundary)
     assert_eq!(out, "");
     assert!(was_truncated);
@@ -589,7 +589,7 @@ fn truncate_body_multi_byte_first_char() {
 #[test]
 fn truncate_body_exact_char_boundary() {
     let body = "ab";
-    let (out, was_truncated, original_len) = truncate_body(&body, 2);
+    let (out, was_truncated, original_len) = truncate_body(body, 2);
     assert_eq!(out, "ab");
     assert!(!was_truncated);
     assert_eq!(original_len, 2);
@@ -619,7 +619,7 @@ fn redact_hl7v2_pid_segment_with_insufficient_fields() {
     let body = "MSH|^~\\&|APP|FAC||FAC|20260101||ADT|1|P|2.3\rPID|1||ID";
     let redacted = redact_hl7v2(body);
     // Should complete without panic and handle out-of-bounds gracefully
-    assert!(redacted.len() > 0);
+    assert!(!redacted.is_empty());
 }
 
 #[test]
@@ -627,7 +627,7 @@ fn redact_hl7v2_msh_segment_with_insufficient_fields() {
     // MSH-3 is at index 2, but if there aren't enough fields, should not panic
     let body = "MSH|^~\\&";
     let redacted = redact_hl7v2(body);
-    assert!(redacted.len() > 0);
+    assert!(!redacted.is_empty());
 }
 
 #[test]

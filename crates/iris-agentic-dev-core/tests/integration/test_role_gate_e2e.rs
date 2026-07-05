@@ -162,6 +162,7 @@ fn mcp_call_with_workspace(
     }
 
     child.kill().ok();
+    let _ = child.wait();
     results
 }
 
