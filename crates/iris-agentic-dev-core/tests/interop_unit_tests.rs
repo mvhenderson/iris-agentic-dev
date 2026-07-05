@@ -984,8 +984,8 @@ mod state_code_mapping {
 
     #[test]
     fn all_valid_state_codes() {
-        let codes = vec![1, 2, 3, 4, 5];
-        let expected_states = vec![
+        let codes = [1, 2, 3, 4, 5];
+        let expected_states = [
             "Running",
             "Stopped",
             "Suspended",

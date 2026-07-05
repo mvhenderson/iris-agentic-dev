@@ -452,6 +452,7 @@ fn test_url_construction_without_prefix() {
 }
 
 #[test]
+#[allow(clippy::const_is_empty)] // scheme_str is a literal stand-in for a runtime-empty value
 fn test_url_construction_default_scheme() {
     // Simulate: scheme defaults to "http" if empty
     let scheme_str = "";

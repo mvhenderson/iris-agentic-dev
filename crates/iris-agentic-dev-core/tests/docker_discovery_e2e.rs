@@ -38,8 +38,8 @@ fn iris_dev_bin() -> std::path::PathBuf {
     workspace_root.join("target/debug/iris-agentic-dev")
 }
 
-/// Skip the test if the iris-dev binary hasn't been built yet.
-/// Run `cargo build` first to enable these E2E tests.
+// Skip the test if the iris-dev binary hasn't been built yet.
+// Run `cargo build` first to enable these E2E tests.
 
 /// Spawn iris-dev mcp subprocess with IRIS_CONTAINER set, capture stderr output.
 /// Sends the MCP initialize handshake, waits up to 5 seconds, then kills.
