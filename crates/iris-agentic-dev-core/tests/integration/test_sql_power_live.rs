@@ -237,6 +237,9 @@ async fn live_count_matches_direct_select_count() {
     )
     .await;
     assert_eq!(direct, via_table);
-    assert_eq!(direct, 1, "expected exactly one match for the fixed class filter");
+    assert_eq!(
+        direct, 1,
+        "expected exactly one match for the fixed class filter"
+    );
     assert!(direct > 0, "expected non-zero class count, got {direct}");
 }
