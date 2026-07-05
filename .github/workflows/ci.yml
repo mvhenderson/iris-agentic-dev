@@ -25,7 +25,7 @@ jobs:
       # Integration tests (test_mcp_iris, test_e2e_all_tools, test_scm, discovery_tests,
       # interop_e2e_tests) require IRIS_HOST/IRIS_WEB_PORT; run them locally.
       - run: |
-          cargo test -p iris-agentic-dev-core --lib \
+          cargo test -p iris-agentic-dev-core --features testing --lib \
             --test test_compile_params \
             --test test_doc_params \
             --test test_elicitation \
@@ -33,7 +33,8 @@ jobs:
             --test manifest_tests \
             --test skills_tests \
             --test vscode_config_tests \
-            --test mcp_handshake
+            --test mcp_handshake \
+            --test test_tools_mod_unit
         env:
           RUST_LOG: warn
 
@@ -167,6 +168,28 @@ jobs:
           echo "SCM configured for USER namespace"
       - name: Run E2E tests against live IRIS (Rust)
         run: cargo test --test test_e2e -- --nocapture
+        env:
+          IRIS_HOST: ${{ env.IRIS_HOST }}
+          IRIS_WEB_PORT: "52773"
+          IRIS_USERNAME: ${{ env.IRIS_USERNAME }}
+          IRIS_PASSWORD: ${{ env.IRIS_PASSWORD }}
+          IRIS_NAMESPACE: USER
+          IRIS_CONTAINER: iris-e2e
+      # `required-features = ["testing"]` test targets were previously never run
+      # anywhere (no CI job passed --features testing), so this file — the bulk
+      # of per-tool live-IRIS coverage — silently never executed on any push or
+      # PR. Run it here now that a live container is up.
+      - name: Run live handler tests against live IRIS (Rust)
+        run: |
+          cargo test --features testing \
+            --test test_handlers_live \
+            --test test_iris_global_live \
+            --test test_iris_doc_depth_live \
+            --test test_dispatch_gate_handlers \
+            --test test_iris_admin_observability_live \
+            --test test_interop_depth_live \
+            --test test_sql_power_live \
+            -- --nocapture
         env:
           IRIS_HOST: ${{ env.IRIS_HOST }}
           IRIS_WEB_PORT: "52773"
