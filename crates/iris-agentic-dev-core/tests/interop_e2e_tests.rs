@@ -147,6 +147,22 @@ fn interop_production_status_returns_structured_json() {
         "must return structured response: {}",
         result
     );
+    // Regression: iris.execute()'s bare `iris session` REPL path on IRIS 2026.2+ prints a
+    // "Node: <hostname>, Instance: IRIS" banner line whose embedded ':' previously got
+    // misparsed as the production name:state pair (production came back as "Node",
+    // state as "Unknown") — strip_iris_banner didn't know about this banner line, and
+    // $$$ISERR silently failed to resolve outside a compiled class (no macro preprocessing
+    // in interactive sessions), masking the real GetProductionStatus() result either way.
+    if result["success"] == true {
+        assert_ne!(
+            result["production"], "Node",
+            "production name must not be the banner artifact 'Node': {result}"
+        );
+        assert_ne!(
+            result["state"], "Unknown",
+            "state must not be 'Unknown' when a production is actually running: {result}"
+        );
+    }
 }
 
 #[test]

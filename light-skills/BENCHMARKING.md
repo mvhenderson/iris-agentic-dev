@@ -8,15 +8,43 @@ Run the repair benchmark yourself, measure your skills, and submit results to th
 
 ## Prerequisites
 
-1. **Docker** — IRIS runs in a container
-2. **Python 3.11+** and `pip` — the harness is Python
-3. **AWS credentials** (for Bedrock LLM) — or an OpenAI API key as an alternative
-4. **The benchmark repo**
+1. **The `iris-agentic-dev` binary**, a version that includes the `benchmark` subcommand —
+   run `iris-agentic-dev benchmark --help` to confirm; if it errors with "unrecognized
+   subcommand", grab the latest build from
+   [releases](https://github.com/intersystems-community/iris-agentic-dev/releases/latest)
+2. **Docker** — IRIS runs in a container
+3. **An LLM API key** — `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+
+No `git clone`, no Rust toolchain, no `pip install`, no separate Python MCP server — just
+the prebuilt binary you already use for compile/execute/test:
 
 ```bash
-git clone https://gitlab.iscinternal.com/devx/iris-dev.git
-cd iris-dev
+# Mac (Homebrew)
+brew tap intersystems-community/iris-agentic-dev
+brew install iris-agentic-dev
+
+# Mac direct download (Apple Silicon)
+curl -fsSL https://github.com/intersystems-community/iris-agentic-dev/releases/latest/download/iris-agentic-dev-macos-arm64 \
+  -o /usr/local/bin/iris-agentic-dev && chmod +x /usr/local/bin/iris-agentic-dev
+xattr -d com.apple.quarantine /usr/local/bin/iris-agentic-dev 2>/dev/null
+
+# Linux x86_64
+curl -fsSL https://github.com/intersystems-community/iris-agentic-dev/releases/latest/download/iris-agentic-dev-linux-x86_64 \
+  -o /usr/local/bin/iris-agentic-dev && chmod +x /usr/local/bin/iris-agentic-dev
 ```
+
+**Windows**: download `iris-agentic-dev-windows-x86_64.exe` from the
+[releases page](https://github.com/intersystems-community/iris-agentic-dev/releases/latest)
+and place it on your PATH.
+
+Already have the binary installed? Check it's new enough:
+
+```bash
+iris-agentic-dev benchmark --help
+```
+
+If that errors with "unrecognized subcommand," reinstall using the commands above to pick
+up the latest release.
 
 ---
 
@@ -27,16 +55,21 @@ cd iris-dev
 docker run -d --name iris-bench \
   -p 1972:1972 -p 52773:52773 \
   intersystemsdc/iris-community:latest
-# Wait ~30 seconds for IRIS to start
+sleep 30   # wait for IRIS to finish starting before the next step
 
-# 2. Install the benchmark harness
-pip install -e objectscript_mcp/
+# 2. Get the SKILL.md files (only needed if you don't already have a local clone —
+#    the harness itself needs no repository, only the skill file you want to test)
+curl -sL https://raw.githubusercontent.com/intersystems-community/iris-agentic-dev/master/light-skills/skills/objectscript-review/SKILL.md \
+  -o objectscript-review-SKILL.md
 
 # 3. Run the benchmark with the top-ranked skill
-BENCH_MODEL=us.anthropic.claude-sonnet-4-6 \
-IRIS_CONTAINER=iris-bench \
-python3 bench/run_benchmark.py \
-  --skill light-skills/skills/objectscript-review/SKILL.md \
+export IRIS_HOST=localhost
+export IRIS_WEB_PORT=52773
+export IRIS_GENERATE_CLASS_MODEL=claude-sonnet-4-6   # or any model generate.rs supports
+export ANTHROPIC_API_KEY=sk-ant-...                   # or OPENAI_API_KEY for gpt-* models
+
+iris-agentic-dev benchmark \
+  --skill objectscript-review-SKILL.md \
   --baseline \
   --output results.json
 
@@ -56,33 +89,29 @@ print(f\"Lift:     {d.get('lift',0):+.0%}\")
 
 ### Step 1: Configure IRIS
 
-The benchmark needs IRIS Community Edition. Use Docker — the harness auto-provisions via `iris-devtester`.
+The benchmark needs any reachable IRIS instance — Community Edition in Docker is the
+easiest path. The harness talks to it entirely over Atelier REST (HTTP), the same
+mechanism every other `iris-agentic-dev` tool uses — there is no Docker-exec dependency
+for running tasks.
 
 ```bash
-# Option A: Let the harness provision automatically (recommended)
-# Just set IRIS_CONTAINER to a name — harness creates it if needed
-export IRIS_CONTAINER=iris-bench
-
-# Option B: Use an existing container
 docker ps --filter "name=iris" --format "{{.Names}} {{.Ports}}"
-export IRIS_CONTAINER=your-existing-container
+export IRIS_HOST=localhost
+export IRIS_WEB_PORT=52773   # the container's mapped Atelier/web port
 ```
 
 ### Step 2: Configure LLM access
 
-The harness supports AWS Bedrock (default) and OpenAI:
+The harness reuses the same `LlmClient` used by `iris_generate_class`/`iris_generate_test`
+— it supports Anthropic and OpenAI models directly (no AWS Bedrock support today):
 
 ```bash
-# AWS Bedrock (Claude Sonnet 4.6 — matches published scores)
-export AWS_DEFAULT_REGION=us-east-1
-# Ensure AWS credentials are configured: aws configure or SSO login
-export BENCH_MODEL=us.anthropic.claude-sonnet-4-6
+# Anthropic
+export IRIS_GENERATE_CLASS_MODEL=claude-sonnet-4-6
+export ANTHROPIC_API_KEY=sk-ant-...
 
-# AWS Bedrock (Claude Opus 4.6 — higher quality, slower)
-export BENCH_MODEL=us.anthropic.claude-opus-4-6-v1
-
-# OpenAI (comparable to published gpt-4.1 baseline)
-export BENCH_MODEL=gpt-4.1
+# OpenAI
+export IRIS_GENERATE_CLASS_MODEL=gpt-4.1
 export OPENAI_API_KEY=sk-...
 ```
 
@@ -90,54 +119,90 @@ export OPENAI_API_KEY=sk-...
 
 ```bash
 # Basic run — with your skill, no baseline comparison
-python3 bench/run_benchmark.py \
-  --skill path/to/your/SKILL.md
+iris-agentic-dev benchmark --skill path/to/your/SKILL.md
 
 # With baseline (runs twice — with skill AND without — shows lift)
-python3 bench/run_benchmark.py \
-  --skill path/to/your/SKILL.md \
-  --baseline
+iris-agentic-dev benchmark --skill path/to/your/SKILL.md --baseline
 
 # Against a specific benchmark suite
-python3 bench/run_benchmark.py \
-  --skill path/to/your/SKILL.md \
-  --suite jira       # 22-task repair benchmark (default)
-  # --suite mf        # 5-task multi-file repair
-  # --suite sql       # 14-task IRIS SQL quirks
+iris-agentic-dev benchmark --skill path/to/your/SKILL.md --suite jira   # default, 22-task repair
+# --suite mf and --suite sql are NOT YET PORTED — only jira is available in v1
 
 # Save results to file
-python3 bench/run_benchmark.py \
-  --skill path/to/your/SKILL.md \
-  --baseline \
-  --output my_skill_results.json
+iris-agentic-dev benchmark --skill path/to/your/SKILL.md --baseline --output my_skill_results.json
 ```
 
 ---
 
 ## Understanding Results
 
+```json
+{
+  "pass_rate": 0.7727272727272727,
+  "baseline_pass_rate": 0.8636363636363636,
+  "lift": -0.09090909090909094,
+  "tasks_passed": 17,
+  "tasks_total": 22,
+  "tasks_errored": 0,
+  "iris_version": "2026.1",
+  "elapsed_s": 187.4,
+  "task_results": [
+    { "task_id": "jira-001", "outcome": "pass", "iterations": 1, "elapsed_s": 8.2, "reason": "" },
+    { "task_id": "jira-002", "outcome": "fail", "iterations": 1, "elapsed_s": 3.9, "reason": "" }
+  ]
+}
 ```
-Running 22-task benchmark on iris-bench (IRIS 2025.1)
-Skill: my-skill/SKILL.md (247 words)
 
-  [1/22] jira-001 easy   ✓ fixed in iteration 1  (4.1s)
-  [2/22] jira-002 easy   ✓ fixed in iteration 1  (3.6s)
-  [3/22] jira-003 easy   ✓ fixed in iteration 2  (8.2s)
-  ...
-  [22/22] jira-056 medium ✓ fixed in iteration 1  (0.7s)
-
-Baseline (no skill):  14/22 = 64%
-With skill:           20/22 = 91%
-Lift:                 +27%
-State:                reviewed  ← automatically set if >= 80%
-skill.toml written → results embedded in SKILL.md frontmatter
-```
+`lift = pass_rate - baseline_pass_rate` (absolute difference — negative means the skill
+underperformed the baseline on this run). `outcome` is `"pass"`, `"fail"`, or `"error"` —
+an errored task (e.g. a tool-level failure unrelated to the fix itself) is excluded from
+`pass_rate`'s denominator and reported separately in `tasks_errored`, so a stale task
+never silently counts against your score.
 
 **Interpreting lift:**
+
 - `+15%` or higher → genuinely useful, submit to leaderboard
 - `+5% to +15%` → useful for its specific domain, label as domain-specific
 - `0% to +5%` → marginal, probably too broad or too narrow
 - **Negative lift** → the skill is hurting on tasks where it isn't relevant; load on demand only, not globally
+
+**Noise floor**: with only 22 tasks, each task is worth ~4.5 points of pass_rate. A single
+LLM call per task is stochastic — the same skill run twice can land a few points apart with
+no real change. Treat lift below ~±9% (roughly 2 tasks' worth) as noise, not signal, unless
+you've run the suite multiple times and it holds up. If you're deciding between two skills
+and the gap is inside that band, run `--baseline` a second time before trusting the number.
+
+---
+
+## Limitations
+
+This is a small, homegrown suite, not a rigorous capability benchmark — read results
+accordingly:
+
+- **Contamination**: the 22 tasks are public, in this repo, on GitHub. If a model has seen
+  this repo (or a fork/mirror of it) during training, it can pass tasks by recalling the
+  fix rather than reasoning about the bug, inflating `pass_rate` for reasons that have
+  nothing to do with your skill. This is the same failure mode documented for HumanEval
+  ([Riddell et al., 2024](https://arxiv.org/html/2412.01526v1)) once its tasks became
+  widely circulated. There's no mitigation for this today — a future version may hold back
+  a private subset for spot-checking.
+- **Single-run, no variance estimate**: each `pass_rate` here is one pass through the
+  suite with one model call per task, not a mean over repeated runs. Model output is
+  stochastic, so a single number overstates precision — see the noise-floor note above.
+- **Single-model validation**: this harness has only been run end-to-end against one model
+  family. A skill's lift on model A says nothing about its lift on model B — per
+  [Anthropic's framing](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents),
+  you're always evaluating harness + model together, never the model (or skill) in
+  isolation.
+- **Task selection is not systematic**: all 22 tasks came from one task-generation pass,
+  not a curated, diversity-checked sample the way
+  [SWE-bench Verified](https://www.swebench.com/verified.html) is human-filtered for
+  representativeness. Expect gaps in bug-type coverage.
+
+None of this means the numbers are useless — a `+20%` lift that survives a couple of
+reruns is real signal. It means don't cite a single run's `pass_rate` as a general claim
+about a skill's quality, and don't be surprised if results don't fully replicate on a
+different model or a larger, less contamination-prone suite.
 
 ---
 
@@ -145,22 +210,20 @@ skill.toml written → results embedded in SKILL.md frontmatter
 
 The data is clear: **shorter hard-gate checklists beat long reference documents**.
 
-| Design | Example | Score |
-|--------|---------|-------|
-| 205-word hard gate checklist | `objectscript-review` | **100%** |
-| 268-word all-in-one | `iris-light-slim` | 86% |
-| 472-word pattern reference | `objectscript-list-patterns` | 91% |
-| 5,170-word comprehensive reference | `iris-light` | 21% |
+| Design                             | Example                      | Score    |
+| ---------------------------------- | ---------------------------- | -------- |
+| 205-word hard gate checklist       | `objectscript-review`        | **100%** |
+| 268-word all-in-one                | `iris-light-slim`            | 86%      |
+| 472-word pattern reference         | `objectscript-list-patterns` | 91%      |
+| 5,170-word comprehensive reference | `iris-light`                 | 21%      |
 
 ### The RED-GREEN methodology
 
-**RED**: Run the baseline first (no skill). See which tasks fail and what the model says when you ask why.
+**RED**: Run with `--baseline` first and inspect `task_results` for tasks where
+`outcome` is `"fail"` — those are the gaps your skill needs to close.
 
 ```bash
-# Get baseline — what fails without any skill?
-python3 bench/run_benchmark.py --no-skill --output baseline.json
-# Then read what the model generates for failing tasks:
-python3 bench/diagnose.py --results baseline.json --task jira-019
+iris-agentic-dev benchmark --skill /dev/null --baseline --output baseline.json
 ```
 
 **GREEN**: Write a skill that addresses the specific failure patterns you observed.
@@ -220,7 +283,7 @@ If clean: > ✅ Passed.
 
 ### PR format
 
-Open a PR to [intersystems-community/vscode-objectscript-mcp](https://github.com/intersystems-community/vscode-objectscript-mcp) with:
+Open a PR to [intersystems-community/iris-agentic-dev](https://github.com/intersystems-community/iris-agentic-dev) with:
 
 1. Your skill file at `light-skills/skills/yourgithub/your-skill/SKILL.md`
 2. PR description including:
@@ -228,111 +291,120 @@ Open a PR to [intersystems-community/vscode-objectscript-mcp](https://github.com
 ```markdown
 ## Skill: yourgithub/your-skill-name
 
-**Suite**: [repair | mf | sql]
+**Suite**: jira
 **Pass rate**: XX%
 **Baseline**: XX%
 **Lift**: +XX%
-**IRIS version**: 2025.1
+**IRIS version**: 2026.1
 **Model**: claude-sonnet-4-6
 **Words**: NNN
 
 ### What this catches that other skills don't
+
 [One paragraph]
 
 ### Benchmark output
-[Paste the summary section from run_benchmark.py output]
+
+[Paste your results.json]
 ```
 
 ---
 
-## Running All Suites
+## Additional Suites (Not Yet Ported)
 
-```bash
-# Run all three suites and get a full comparison
-python3 bench/run_all_suites.py \
-  --skill path/to/SKILL.md \
-  --baseline \
-  --output full_results.json
-
-# Compare multiple skills head-to-head
-python3 bench/compare_skills.py \
-  --skills \
-    light-skills/skills/objectscript-review/SKILL.md \
-    light-skills/skills/iris-light-slim/SKILL.md \
-    path/to/your/SKILL.md \
-  --baseline \
-  --suite jira
-```
+The `mf` (multi-file repair) and `sql` (IRIS SQL quirks) suites from the original
+research are explicitly deferred — v1 ports only the primary `jira` repair suite that
+this Quick Start exercises. `--suite mf` / `--suite sql` will error with
+`SUITE_NOT_AVAILABLE` until a future contribution ports them.
 
 ---
 
 ## Troubleshooting
 
-**`IRIS container not found`**
+### No IRIS connection found
+
 ```bash
-docker run -d --name iris-bench -p 1972:1972 \
+docker run -d --name iris-bench -p 1972:1972 -p 52773:52773 \
   intersystemsdc/iris-community:latest
+export IRIS_HOST=localhost
+export IRIS_WEB_PORT=52773
 ```
 
-**`BenchmarkContainerError: container not running`**
-```bash
-docker start iris-bench
-# Wait 30 seconds, then retry
-```
+### LLM authentication failed
 
-**`LLM authentication failed`**
 ```bash
-# AWS Bedrock:
-aws sso login --profile your-profile
-# or: aws configure
+# Anthropic:
+export ANTHROPIC_API_KEY=sk-ant-...
 
 # OpenAI:
 export OPENAI_API_KEY=sk-...
 ```
 
-**`Benchmark score much lower than published`**
-- Verify model: `echo $BENCH_MODEL` — should be `us.anthropic.claude-sonnet-4-6`
-- Verify IRIS version: `docker exec iris-bench iris session IRIS 'write $ZVERSION halt'`
-- The BenchRunner class may be stale — delete it: `docker exec -i iris-bench iris session IRIS -U USER 'do ##class(%SYSTEM.OBJ).Delete("IrisLight.BenchRunner") halt'`
+Also confirm `IRIS_GENERATE_CLASS_MODEL` is set to a model name your key has access to.
 
-**`All tasks time out (>30s each)`**
-- LLM is slow — try `--task-timeout 60`
-- Or switch to a faster model: `BENCH_MODEL=us.anthropic.claude-sonnet-4-6`
+### `SUITE_NOT_AVAILABLE`
+
+- Only `--suite jira` (the default) is available in v1 — `mf`/`sql` are not yet ported.
+
+### `BENCHMARK_RUN_IN_PROGRESS`
+
+- Another benchmark run is already active against the same IRIS host. Wait for it to
+  finish; a run older than `--max-time-s` (default 600) is treated as abandoned and
+  automatically overridden on the next attempt.
+
+### Tasks time out
+
+- The LLM call is slow — raise `--task-timeout-s` (default 30) or `--max-time-s`
+  (default 600), or switch to a faster model.
 
 ---
 
 ## Benchmark Task Format
 
-Each task is a JSON file in `bench/eval_tasks/`:
+Each task is a JSON file under
+`crates/iris-agentic-dev-core/src/benchmark/tasks/jira_bugs/`:
 
 ```json
 {
   "task_id": "jira-001",
+  "category": "jira_bugs",
   "difficulty": "easy",
   "description": "Fix null pointer error when processing empty patient records",
   "goal": "Add $IsObject check before accessing object properties",
   "initial_code": {
-    "files": [{"path": "src/X.cls", "content": "...buggy code..."}]
+    "files": [{ "path": "src/X.cls", "content": "...buggy code..." }]
   },
-  "test_code": {"path": "tests/TestX.cls", "content": "...test that fails on bug..."},
+  "test_code": { "path": "tests/TestX.cls", "content": "...test that fails on bug..." },
   "hints": [],
-  "expected_behavior": "..."
+  "expected_behavior": "...",
+  "success_criteria": {
+    "compile_success": true,
+    "tests_pass": true,
+    "max_patch_lines": 30,
+    "requires_symbol_preservation": true
+  }
 }
 ```
 
-**Adding new tasks**: See `bench/eval_tasks/README.md`. Tasks must:
+`test_code` classes extend `%RegisteredObject` with `ClassMethod`/`Method`s named
+`TestXxx` (not `%UnitTest.TestCase`) — the harness invokes each `Test*` method directly
+and treats an uncaught exception as a failure, matching this schema's existing
+convention.
+
+**Adding new tasks**: tasks must:
+
 1. Compile on buggy code (syntax errors are a different skill test)
 2. Fail the test on buggy code
 3. Pass the test on the correct fix
 4. Be self-contained (no external class dependencies)
 
-Current suites:
-- `bench/eval_tasks/jira_bugs/` — 22 single-function repair tasks
-- `bench/eval_tasks/mf_bugs/` — 5 multi-file repair tasks  
-- `bench/eval_tasks/iris_sql/` — 14 IRIS SQL quirks tasks
+Current suite:
+
+- `crates/iris-agentic-dev-core/src/benchmark/tasks/jira_bugs/` — 22 single-function
+  repair tasks (the only suite ported in v1)
 
 ---
 
 ## Questions?
 
-File issues at [intersystems-community/vscode-objectscript-mcp](https://github.com/intersystems-community/vscode-objectscript-mcp) or ping `@tdyar` / `@tleavitt` on Teams.
+File issues at [intersystems-community/iris-agentic-dev](https://github.com/intersystems-community/iris-agentic-dev/issues).

@@ -41,14 +41,14 @@ TEST_ARGS=(--lib)
 for t in "${UNIT_TESTS[@]}"; do TEST_ARGS+=(--test "$t"); done
 
 ~/.cargo/bin/cargo-llvm-cov llvm-cov \
-  --package iris-dev-core \
+  --package iris-agentic-dev-core \
   "${TEST_ARGS[@]}" \
   --summary-only 2>&1 | grep -E "^[a-z/].*\.rs|^TOTAL"
 
 echo ""
-echo "=== Step 2: Build instrumented iris-dev binary ==="
-RUSTFLAGS="-C instrument-coverage" cargo build -p iris-dev 2>&1 | tail -2
-INSTRUMENTED="$(pwd)/target/debug/iris-dev"
+echo "=== Step 2: Build instrumented iris-agentic-dev binary ==="
+RUSTFLAGS="-C instrument-coverage" cargo build -p iris-agentic-dev 2>&1 | tail -2
+INSTRUMENTED="$(pwd)/target/debug/iris-agentic-dev"
 echo "Instrumented binary: $INSTRUMENTED"
 
 echo ""
@@ -59,7 +59,7 @@ if [[ -n "${IRIS_HOST:-}" ]]; then
 
   # Run each E2E test individually so we can collect per-test profraw
   # Pass the instrumented binary path via IRIS_DEV_BIN
-  LLVM_PROFILE_FILE="$COV_DIR/iris-dev-%p.profraw" \
+  LLVM_PROFILE_FILE="$COV_DIR/iris-agentic-dev-%p.profraw" \
     IRIS_DEV_BIN="$INSTRUMENTED" \
     IRIS_HOST="${IRIS_HOST}" IRIS_WEB_PORT="${IRIS_WEB_PORT:-52780}" \
     IRIS_CONTAINER="${IRIS_CONTAINER:-iris-dev-iris}" \
@@ -88,7 +88,7 @@ fi
 echo ""
 echo "=== Final: Unit coverage summary ==="
 ~/.cargo/bin/cargo-llvm-cov llvm-cov \
-  --package iris-dev-core \
+  --package iris-agentic-dev-core \
   "${TEST_ARGS[@]}" \
   --summary-only 2>&1 | grep "^TOTAL" | tee "$SUMMARY"
 

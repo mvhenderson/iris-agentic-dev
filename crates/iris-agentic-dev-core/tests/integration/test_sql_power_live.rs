@@ -212,20 +212,31 @@ async fn live_count_matches_direct_select_count() {
             .unwrap_or(-1)
     }
 
+    // Filter to a single fixed, always-compiled system class rather than counting the
+    // whole %Dictionary.ClassDefinition table — other tests in this suite compile/drop
+    // classes concurrently, and counting the live mutable table races between the two
+    // sequential HTTP calls below (observed: 9867 vs 9869 on a concurrent run).
+    let filter = "WHERE Name = '%Library.RegisteredObject'";
     let direct = run_count(
         &client,
         &query_url,
         &iris,
-        "SELECT COUNT(*) FROM %Dictionary.ClassDefinition",
+        &format!("SELECT COUNT(*) FROM %Dictionary.ClassDefinition {filter}"),
     )
     .await;
     let via_table = run_count(
         &client,
         &query_url,
         &iris,
-        &iris_agentic_dev_core::tools::build_count_query(Some("%Dictionary.ClassDefinition"), None),
+        &iris_agentic_dev_core::tools::build_count_query(
+            None,
+            Some(&format!(
+                "SELECT * FROM %Dictionary.ClassDefinition {filter}"
+            )),
+        ),
     )
     .await;
     assert_eq!(direct, via_table);
+    assert_eq!(direct, 1, "expected exactly one match for the fixed class filter");
     assert!(direct > 0, "expected non-zero class count, got {direct}");
 }

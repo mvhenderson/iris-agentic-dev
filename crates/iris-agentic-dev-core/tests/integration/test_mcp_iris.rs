@@ -7,11 +7,24 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn iris_dev_bin() -> std::path::PathBuf {
-    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop();
-    path.pop();
-    path.push("target/debug/iris-dev");
-    path
+    let workspace_root = {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop();
+        p.pop();
+        p
+    };
+    for target_subdir in [
+        "target/debug/iris-agentic-dev",
+        "target/release/iris-agentic-dev",
+        "target/llvm-cov-target/debug/iris-agentic-dev",
+        "target/llvm-cov-target/release/iris-agentic-dev",
+    ] {
+        let candidate = workspace_root.join(target_subdir);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    workspace_root.join("target/debug/iris-agentic-dev")
 }
 
 /// Exchange messages with iris-dev mcp. Sends messages with delays, reads responses live.
@@ -111,6 +124,12 @@ fn e2e_iris_compile_success() {
     let responses = mcp_exchange(&[
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"e2e","version":"0.1"}}}),
         serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
+        // IrisDevTest.LiveCheck must exist before it can be compiled — write it first.
+        serde_json::json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"iris_doc","arguments":{
+            "mode":"put","name":"IrisDevTest.LiveCheck.cls",
+            "content":"Class IrisDevTest.LiveCheck Extends %RegisteredObject {\n}\n",
+            "namespace":"USER"
+        }}}),
         serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"iris_compile","arguments":{"target":"IrisDevTest.LiveCheck","flags":"ck"}}}),
     ]);
 

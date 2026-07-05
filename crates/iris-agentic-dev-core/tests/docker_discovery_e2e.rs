@@ -12,12 +12,30 @@ use std::process::{Command, Stdio};
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
 
+/// Locates the built `iris-agentic-dev` binary (the `[[bin]] name` in
+/// `iris-agentic-dev-bin`'s Cargo.toml — NOT `iris-dev`, a stale name from before a
+/// crate rename). Checks both `target/{debug,release}/` (plain `cargo build`/`cargo
+/// test`) and `target/llvm-cov-target/{debug,release}/` (`cargo llvm-cov`, which
+/// builds into a separate target dir) since this test is exercised by both.
 fn iris_dev_bin() -> std::path::PathBuf {
-    let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/debug/iris-dev");
-    p
+    let workspace_root = {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop();
+        p.pop();
+        p
+    };
+    for target_subdir in [
+        "target/debug/iris-agentic-dev",
+        "target/release/iris-agentic-dev",
+        "target/llvm-cov-target/debug/iris-agentic-dev",
+        "target/llvm-cov-target/release/iris-agentic-dev",
+    ] {
+        let candidate = workspace_root.join(target_subdir);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    workspace_root.join("target/debug/iris-agentic-dev")
 }
 
 /// Skip the test if the iris-dev binary hasn't been built yet.

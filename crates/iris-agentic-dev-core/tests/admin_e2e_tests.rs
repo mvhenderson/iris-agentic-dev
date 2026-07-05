@@ -2,12 +2,32 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
+/// Locates the built `iris-agentic-dev` binary (the `[[bin]] name` in
+/// `iris-agentic-dev-bin`'s Cargo.toml — NOT `iris-dev`, a stale name from before a
+/// crate rename). Checks both `target/{debug,release}/` (plain `cargo build`/`cargo
+/// test`) and `target/llvm-cov-target/{debug,release}/` (`cargo llvm-cov`, which
+/// builds into a separate target dir) since this test is exercised by both.
 fn iris_dev_bin() -> std::path::PathBuf {
-    let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/debug/iris-dev");
-    p
+    let workspace_root = {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.pop();
+        p.pop();
+        p
+    };
+    for target_subdir in [
+        "target/debug/iris-agentic-dev",
+        "target/release/iris-agentic-dev",
+        "target/llvm-cov-target/debug/iris-agentic-dev",
+        "target/llvm-cov-target/release/iris-agentic-dev",
+    ] {
+        let candidate = workspace_root.join(target_subdir);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    // Fall back to the plain debug path so the resulting error message names the
+    // path we expected, rather than an empty PathBuf.
+    workspace_root.join("target/debug/iris-agentic-dev")
 }
 
 fn mcp_exchange(
@@ -394,7 +414,16 @@ fn test_admin_namespace_crud() {
 }
 
 #[test]
-#[ignore = "requires live IRIS with IRIS_ADMIN_TOOLS=1"]
+#[ignore = "requires live IRIS with IRIS_ADMIN_TOOLS=1 AND HealthShare/Ensemble \
+support — Security.Applications.Create() internally calls \
+%ZHSLIB.HealthShareMgr, which does not exist on IRIS Community edition \
+(confirmed via %Dictionary.ClassDefinition.%ExistsId returning 0 on \
+intersystemsdc/iris-community:2026.2). This is an IRIS-internal dependency, \
+not a bug in admin_create_webapp_impl — the code correctly calls the \
+documented Security.Applications API. Fails with \
+<CLASS DOES NOT EXIST>IsHealthShareInstalled+3^%Library.EnsembleMgr on \
+Community-edition containers; only run this test against an Enterprise/ \
+Ensemble-capable IRIS instance."]
 fn test_admin_webapp_crud() {
     assert!(iris_available());
     let env = &[("IRIS_ADMIN_TOOLS", "1")];

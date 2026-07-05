@@ -14,15 +14,24 @@ fn iris_dev_bin() -> std::path::PathBuf {
             return p;
         }
     }
-    let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/debug/iris-dev");
-    if !p.exists() {
+    let workspace_root = {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         p.pop();
-        p.push("release/iris-dev");
+        p.pop();
+        p
+    };
+    for target_subdir in [
+        "target/debug/iris-agentic-dev",
+        "target/release/iris-agentic-dev",
+        "target/llvm-cov-target/debug/iris-agentic-dev",
+        "target/llvm-cov-target/release/iris-agentic-dev",
+    ] {
+        let candidate = workspace_root.join(target_subdir);
+        if candidate.exists() {
+            return candidate;
+        }
     }
-    p
+    workspace_root.join("target/debug/iris-agentic-dev")
 }
 
 fn iris_host() -> String {
@@ -187,10 +196,11 @@ fn test_e2e_select_container_updates_check_config() {
         return;
     }
     // In a single MCP session: select container, then check_config
+    // iris_select_container consolidated into iris_containers(action=select) — FR-007.
     let mut msgs = init_msgs();
     msgs.push(serde_json::json!({
         "jsonrpc":"2.0","id":2,"method":"tools/call",
-        "params":{"name":"iris_select_container","arguments":{"name":"iris-dev-iris","namespace":"USER"}}
+        "params":{"name":"iris_containers","arguments":{"action":"select","name":"iris-dev-iris","namespace":"USER"}}
     }));
     msgs.push(serde_json::json!({
         "jsonrpc":"2.0","id":3,"method":"tools/call",

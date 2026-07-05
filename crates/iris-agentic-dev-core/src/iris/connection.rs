@@ -598,17 +598,26 @@ fn is_production_namespace(ns: &str) -> bool {
 /// Lines that start with a prompt prefix but have content after it are kept.
 pub fn strip_iris_banner(output: &str) -> String {
     let mut result_lines: Vec<&str> = Vec::new();
+    // Banner-text rules (below) only apply before the first prompt is seen — after that,
+    // a line like "IRIS for UNIX ..." is legitimate `Write $ZVersion` output, not the
+    // connect-time banner, and must not be stripped (regression: this previously made
+    // test_execute_zversion's `Write $ZVersion` output disappear entirely).
+    let mut seen_prompt = false;
 
     for line in output.lines() {
         let trimmed = line.trim();
 
-        // Unconditionally strip well-known banner lines.
-        if trimmed.starts_with("Copyright")
-            || trimmed.contains("InterSystems Corporation")
-            || trimmed.starts_with("All rights reserved")
-            || trimmed.starts_with("IRIS for ")
-            || trimmed.starts_with("Cache for ")
-            || trimmed.starts_with("Ensemble for ")
+        if !seen_prompt
+            && (trimmed.starts_with("Copyright")
+                || trimmed.contains("InterSystems Corporation")
+                || trimmed.starts_with("All rights reserved")
+                || trimmed.starts_with("IRIS for ")
+                || trimmed.starts_with("Cache for ")
+                || trimmed.starts_with("Ensemble for ")
+                // IRIS 2026.2+ prints "Node: <hostname>, Instance: IRIS" on session connect.
+                // Without this, its embedded ':' gets misparsed as a name:code pair by
+                // callers like parse_status_response (e.g. "Node" became the production name).
+                || (trimmed.starts_with("Node: ") && trimmed.contains(", Instance:")))
         {
             continue;
         }
@@ -616,6 +625,7 @@ pub fn strip_iris_banner(output: &str) -> String {
         // Strip bare prompt-only lines: lines that are just "USER>", "IRIS>", "%SYS>", etc.
         // A bare prompt line has no content beyond the prompt token.
         if is_bare_prompt_line(trimmed) {
+            seen_prompt = true;
             continue;
         }
 
@@ -1043,6 +1053,31 @@ mod additional_tests {
         let stripped = strip_iris_banner(raw);
         assert!(!stripped.contains("Copyright"), "{stripped:?}");
         assert_eq!(stripped.trim(), "42");
+    }
+
+    #[test]
+    fn strip_iris_banner_removes_node_instance_line() {
+        // IRIS 2026.2+ prints this on every `iris session` connect. Its embedded ':'
+        // previously got misparsed as a name:code pair by callers like
+        // interop::parse_status_response (production name came back as "Node").
+        let raw = "\nNode: de17f22ad88c, Instance: IRIS\n\nUSER>\nIrisDevTest.CoverageProduction:1\n\nUSER>\n";
+        let stripped = strip_iris_banner(raw);
+        assert!(!stripped.contains("Node:"), "{stripped:?}");
+        assert_eq!(stripped.trim(), "IrisDevTest.CoverageProduction:1");
+    }
+
+    #[test]
+    fn strip_iris_banner_keeps_iris_for_line_after_first_prompt() {
+        // Regression: `Write $ZVersion` legitimately outputs a string starting with
+        // "IRIS for UNIX ..." — this must NOT be treated as the connect-time banner
+        // just because it shares the same text prefix. Only strip banner-shaped text
+        // that appears before the first prompt is seen.
+        let raw = "\nNode: de17f22ad88c, Instance: IRIS\n\nUSER>\nIRIS for UNIX (Ubuntu Server LTS for ARM64 Containers) 2026.2.0L\n\nUSER>\n";
+        let stripped = strip_iris_banner(raw);
+        assert_eq!(
+            stripped.trim(),
+            "IRIS for UNIX (Ubuntu Server LTS for ARM64 Containers) 2026.2.0L"
+        );
     }
 
     #[test]

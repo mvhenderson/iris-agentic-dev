@@ -151,7 +151,7 @@ pub async fn interop_production_status_impl(
         Some(i) => i,
         None => return err_json("IRIS_UNREACHABLE", "No IRIS connection"),
     };
-    let code = r#"Set sc=##class(Ens.Director).GetProductionStatus(.n,.s) If $$$ISERR(sc) { Write "ERROR:"_$System.Status.GetErrorText(sc) } Else { Write n_":"_s }"#;
+    let code = r#"Set sc=##class(Ens.Director).GetProductionStatus(.n,.s) If $System.Status.IsError(sc) { Write "ERROR:"_$System.Status.GetErrorText(sc) } Else { Write n_":"_s }"#;
     // Bug 7: use params.namespace, not iris.namespace.
     match iris.execute(code, &params.namespace).await {
         Ok(output) => {
@@ -186,7 +186,7 @@ pub async fn interop_production_start_impl(
     };
     let prod = params.production.as_deref().unwrap_or("");
     let code = format!(
-        r#"Set sc=##class(Ens.Director).StartProduction("{}") If $$$ISERR(sc) {{ Write "ERROR:"_$System.Status.GetErrorText(sc) }} Else {{ Write "OK" }}"#,
+        r#"Set sc=##class(Ens.Director).StartProduction("{}") If $System.Status.IsError(sc) {{ Write "ERROR:"_$System.Status.GetErrorText(sc) }} Else {{ Write "OK" }}"#,
         prod
     );
     // Bug 7: use params.namespace, not iris.namespace.
@@ -220,7 +220,7 @@ pub async fn interop_production_stop_impl(
         None => return err_json("IRIS_UNREACHABLE", "No IRIS connection"),
     };
     let code = format!(
-        r#"Set sc=##class(Ens.Director).StopProduction({},{}) If $$$ISERR(sc) {{ Write "ERROR:"_$System.Status.GetErrorText(sc) }} Else {{ Write "OK" }}"#,
+        r#"Set sc=##class(Ens.Director).StopProduction({},{}) If $System.Status.IsError(sc) {{ Write "ERROR:"_$System.Status.GetErrorText(sc) }} Else {{ Write "OK" }}"#,
         params.timeout,
         if params.force { 1 } else { 0 }
     );
@@ -255,7 +255,7 @@ pub async fn interop_production_update_impl(
         None => return err_json("IRIS_UNREACHABLE", "No IRIS connection"),
     };
     let code = format!(
-        r#"Set sc=##class(Ens.Director).UpdateProduction({},{}) If $$$ISERR(sc) {{ Write "ERROR:"_$System.Status.GetErrorText(sc) }} Else {{ Write "OK" }}"#,
+        r#"Set sc=##class(Ens.Director).UpdateProduction({},{}) If $System.Status.IsError(sc) {{ Write "ERROR:"_$System.Status.GetErrorText(sc) }} Else {{ Write "OK" }}"#,
         params.timeout,
         if params.force { 1 } else { 0 }
     );
@@ -315,7 +315,7 @@ pub async fn interop_production_recover_impl(
         Some(i) => i,
         None => return err_json("IRIS_UNREACHABLE", "No IRIS connection"),
     };
-    let code = r#"Set sc=##class(Ens.Director).RecoverProduction() If $$$ISERR(sc) { Write "ERROR:"_$System.Status.GetErrorText(sc) } Else { Write "OK" }"#;
+    let code = r#"Set sc=##class(Ens.Director).RecoverProduction() If $System.Status.IsError(sc) { Write "ERROR:"_$System.Status.GetErrorText(sc) } Else { Write "OK" }"#;
     // Bug 7: use params.namespace.
     match iris.execute(code, &params.namespace).await {
         Ok(output) => {
@@ -495,7 +495,7 @@ pub async fn interop_production_item_impl(
             let enabled_val = if params.action == "enable" { "1" } else { "0" };
             let code = format!(
                 r#"Set tSC=##class(Ens.Director).GetProductionStatus(.n,.s)
-If $$$ISERR(tSC) {{ Write "ERROR:NO_PRODUCTION:"_$System.Status.GetErrorText(tSC) Quit }}
+If $System.Status.IsError(tSC) {{ Write "ERROR:NO_PRODUCTION:"_$System.Status.GetErrorText(tSC) Quit }}
 If n="" {{ Write "ERROR:NO_PRODUCTION:No production running" Quit }}
 Set tProd=##class(Ens.Config.Production).%OpenId(n,,.tSC2)
 If '$IsObject(tProd) {{ Write "ERROR:INTEROP_ERROR:Cannot open production" Quit }}
@@ -503,9 +503,9 @@ Set tItem=tProd.FindItemByConfigName("{}",,.tSC3)
 If '$IsObject(tItem) {{ Write "ERROR:ITEM_NOT_FOUND:Item not found: {}" Quit }}
 Set tItem.Enabled={}
 Set tSC4=tProd.%Save()
-If $$$ISERR(tSC4) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC4) Quit }}
+If $System.Status.IsError(tSC4) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC4) Quit }}
 Set tSC5=##class(Ens.Director).UpdateProduction(10,0)
-If $$$ISERR(tSC5) {{ Write "ERROR:UPDATE_FAILED:"_$System.Status.GetErrorText(tSC5) Quit }}
+If $System.Status.IsError(tSC5) {{ Write "ERROR:UPDATE_FAILED:"_$System.Status.GetErrorText(tSC5) Quit }}
 Write "OK""#,
                 item, item, enabled_val
             );
@@ -539,7 +539,7 @@ Write "OK""#,
         "get_settings" => {
             let code = format!(
                 r#"Set tSC=##class(Ens.Director).GetProductionStatus(.n,.s)
-If $$$ISERR(tSC)||n="" {{ Write "ERROR:NO_PRODUCTION:No production running" Quit }}
+If $System.Status.IsError(tSC)||n="" {{ Write "ERROR:NO_PRODUCTION:No production running" Quit }}
 Set tProd=##class(Ens.Config.Production).%OpenId(n,,.tSC2)
 If '$IsObject(tProd) {{ Write "ERROR:INTEROP_ERROR:Cannot open production" Quit }}
 Set tItem=tProd.FindItemByConfigName("{}",,.tSC3)
@@ -609,15 +609,15 @@ Set tS.Value="{}"
             }
             let code = format!(
                 r#"Set tSC=##class(Ens.Director).GetProductionStatus(.n,.s)
-If $$$ISERR(tSC)||n="" {{ Write "ERROR:NO_PRODUCTION:No production running" Quit }}
+If $System.Status.IsError(tSC)||n="" {{ Write "ERROR:NO_PRODUCTION:No production running" Quit }}
 Set tProd=##class(Ens.Config.Production).%OpenId(n,,.tSC2)
 If '$IsObject(tProd) {{ Write "ERROR:INTEROP_ERROR:Cannot open production" Quit }}
 Set tItem=tProd.FindItemByConfigName("{}",,.tSC3)
 If '$IsObject(tItem) {{ Write "ERROR:ITEM_NOT_FOUND:Item not found: {}" Quit }}
 {}Set tSC4=tProd.%Save()
-If $$$ISERR(tSC4) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC4) Quit }}
+If $System.Status.IsError(tSC4) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC4) Quit }}
 Set tSC5=##class(Ens.Director).UpdateProduction(10,0)
-If $$$ISERR(tSC5) {{ Write "ERROR:UPDATE_FAILED:"_$System.Status.GetErrorText(tSC5) Quit }}
+If $System.Status.IsError(tSC5) {{ Write "ERROR:UPDATE_FAILED:"_$System.Status.GetErrorText(tSC5) Quit }}
 Write "OK""#,
                 item, item, setting_lines
             );
@@ -752,7 +752,7 @@ pub async fn interop_credential_manage_impl(
             };
             let code = format!(
                 r#"Set tSC=##class(Ens.Config.Credentials).SetCredential("{}","{}","{}",0)
-If $$$ISERR(tSC) {{ Write "ERROR:CREDENTIAL_EXISTS:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
+If $System.Status.IsError(tSC) {{ Write "ERROR:CREDENTIAL_EXISTS:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
                 id, username, password
             );
             match iris.execute_via_generator(&code, ns, &client).await {
@@ -796,7 +796,7 @@ If $$$ISERR(tSC) {{ Write "ERROR:CREDENTIAL_EXISTS:"_$System.Status.GetErrorText
             };
             let code = format!(
                 r#"Set tSC=##class(Ens.Config.Credentials).SetCredential("{}",{},{},1)
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
                 id, username_expr, password_expr
             );
             match iris.execute_via_generator(&code, ns, &client).await {
@@ -824,7 +824,7 @@ If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC
             let code = format!(
                 r#"If '##class(Ens.Config.Credentials).%ExistsId("{}") {{ Write "ERROR:CREDENTIAL_NOT_FOUND:Credential not found: {}" Quit }}
 Set tSC=##class(Ens.Config.Credentials).%DeleteId("{}")
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
                 id, id, id
             );
             match iris.execute_via_generator(&code, ns, &client).await {
@@ -973,7 +973,7 @@ Write tVal"#,
             };
             let code = format!(
                 r#"Set tSC=##class(Ens.Util.LookupTable).%UpdateValue("{}","{}","{}",1)
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
                 table, key, value
             );
             match iris.execute_via_generator(&code, ns, &client).await {
@@ -1009,7 +1009,7 @@ If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC
             let code = format!(
                 r#"If '$DATA(^Ens.LookupTable("{}")) {{ Write "ERROR:TABLE_NOT_FOUND:Table not found: {}" Quit }}
 Set tSC=##class(Ens.Util.LookupTable).%RemoveValue("{}","{}")
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
                 table, table, table, key
             );
             match iris.execute_via_generator(&code, ns, &client).await {
@@ -1096,7 +1096,7 @@ pub async fn interop_lookup_transfer_impl(
                 r#"If '$DATA(^Ens.LookupTable("{}")) {{ Write "ERROR:TABLE_NOT_FOUND:Table not found: {}" Quit }}
 Set tStream=##class(%Stream.TmpBinary).%New()
 Set tSC=##class(Ens.Util.LookupTable).%Export(tStream,"{}")
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) Quit }}
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) Quit }}
 Do tStream.Rewind()
 Set tOut="" While 'tStream.AtEnd {{ Set tOut=tOut_tStream.Read(32000) }}
 Write tOut"#,
@@ -1140,10 +1140,10 @@ Set tStream=##class(%Stream.FileCharacter).%New()
 Set tStream.Filename=tFile
 Do tStream.Write("{}")
 Set tSC=tStream.%Save()
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:Cannot write temp file" Quit }}
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:Cannot write temp file" Quit }}
 Set tSC2=##class(Ens.Util.LookupTable).%Import(tFile,"{}","")
 Do ##class(%File).Delete(tFile)
-If $$$ISERR(tSC2) {{ Write "ERROR:INVALID_XML:"_$System.Status.GetErrorText(tSC2) Quit }}
+If $System.Status.IsError(tSC2) {{ Write "ERROR:INVALID_XML:"_$System.Status.GetErrorText(tSC2) Quit }}
 Write "OK""#,
                 xml_escaped, table
             );
@@ -1240,7 +1240,7 @@ pub async fn interop_autostart_set_impl(
 
     if !enabled {
         let code = r#"Set tSC=##class(Ens.Director).SetAutoStart("")
-If $$$ISERR(tSC) { Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) } Else { Write "OK" }"#;
+If $System.Status.IsError(tSC) { Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) } Else { Write "OK" }"#;
         match iris.execute_via_generator(code, ns, &client).await {
             Ok(out) if out.trim() == "OK" => {
                 return ok_json(
@@ -1266,7 +1266,7 @@ If $$$ISERR(tSC) { Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC)
         p.replace('\'', "''")
     } else {
         // Get currently running production
-        let status_code = r#"Set sc=##class(Ens.Director).GetProductionStatus(.n,.s) If $$$ISERR(sc)||n="" { Write "ERROR:NO_PRODUCTION:No production running" } Else { Write n }"#;
+        let status_code = r#"Set sc=##class(Ens.Director).GetProductionStatus(.n,.s) If $System.Status.IsError(sc)||n="" { Write "ERROR:NO_PRODUCTION:No production running" } Else { Write n }"#;
         match iris.execute_via_generator(status_code, ns, &client).await {
             Ok(out) => {
                 let out = out.trim().to_string();
@@ -1290,7 +1290,7 @@ If $$$ISERR(tSC) { Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC)
 
     let code = format!(
         r#"Set tSC=##class(Ens.Director).SetAutoStart("{}")
-If $$$ISERR(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
+If $System.Status.IsError(tSC) {{ Write "ERROR:INTEROP_ERROR:"_$System.Status.GetErrorText(tSC) }} Else {{ Write "OK" }}"#,
         prod_name
     );
     match iris.execute_via_generator(&code, ns, &client).await {
@@ -1720,7 +1720,7 @@ pub async fn handle_iris_production_diff(
     let prod_name = if let Some(p) = &params.production {
         p.clone()
     } else {
-        let status_code = r#"Set sc=##class(Ens.Director).GetProductionStatus(.n,.s) If $$$ISERR(sc)||n="" { Write "ERROR:NO_PRODUCTION" } Else { Write n }"#;
+        let status_code = r#"Set sc=##class(Ens.Director).GetProductionStatus(.n,.s) If $System.Status.IsError(sc)||n="" { Write "ERROR:NO_PRODUCTION" } Else { Write n }"#;
         match iris.execute_via_generator(status_code, ns, &client).await {
             Ok(out) => {
                 let out = out.trim().to_string();

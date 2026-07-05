@@ -69,9 +69,12 @@ async fn discover_iris_reads_env_vars() {
 #[tokio::test]
 #[ignore = "requires isolated env — no Docker IRIS, no VS Code Server Manager configured"]
 async fn discover_iris_returns_none_when_nothing_found() {
-    // Ensure no env vars interfere
+    // Ensure no env vars interfere — IRIS_CONTAINER must also be cleared, since the
+    // named-container Docker path (cascade step 3) runs before the localhost scan and
+    // would otherwise resolve to a real container on a dev machine that has one set.
     std::env::remove_var("IRIS_HOST");
     std::env::remove_var("IRIS_WEB_PORT");
+    std::env::remove_var("IRIS_CONTAINER");
 
     // With no IRIS running and no config, should return NotFound (not panic)
     let result = discover_iris(None).await;

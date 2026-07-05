@@ -14,15 +14,24 @@ fn iris_dev_bin() -> std::path::PathBuf {
             return p;
         }
     }
-    let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/debug/iris-dev");
-    if !p.exists() {
+    let workspace_root = {
+        let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         p.pop();
-        p.push("release/iris-dev");
+        p.pop();
+        p
+    };
+    for target_subdir in [
+        "target/debug/iris-agentic-dev",
+        "target/release/iris-agentic-dev",
+        "target/llvm-cov-target/debug/iris-agentic-dev",
+        "target/llvm-cov-target/release/iris-agentic-dev",
+    ] {
+        let candidate = workspace_root.join(target_subdir);
+        if candidate.exists() {
+            return candidate;
+        }
     }
-    p
+    workspace_root.join("target/debug/iris-agentic-dev")
 }
 
 fn iris_host() -> String {

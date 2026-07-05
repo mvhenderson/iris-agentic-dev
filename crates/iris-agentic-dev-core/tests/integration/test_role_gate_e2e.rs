@@ -221,7 +221,7 @@ fn call_with_develop_config(
     timeout_secs: u64,
 ) -> (serde_json::Value, tempfile::TempDir) {
     let dir = tempfile::TempDir::new().unwrap();
-    let container = std::env::var("IRIS_CONTAINER").unwrap_or_else(|_| "iris-dev".to_string());
+    let container = std::env::var("IRIS_CONTAINER").unwrap_or_else(|_| "iris-dev-iris".to_string());
 
     let toml = format!(
         r#"container = "{container}"
