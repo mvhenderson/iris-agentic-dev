@@ -28,3 +28,7 @@ tempfile = "3"
 [[test]]
 name = "plugin_dispatch_tests"
 path = "tests/plugin_dispatch_tests.rs"
+
+[[test]]
+name = "benchmark_relocated_binary_tests"
+path = "tests/benchmark_relocated_binary_tests.rs"

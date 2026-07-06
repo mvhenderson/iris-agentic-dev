@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use iris_agentic_dev_core::benchmark::{
-    acquire_lock, load_tasks, release_lock, run_suite, BenchmarkResult, LockResult,
+    acquire_lock, load_embedded_tasks, release_lock, run_suite, BenchmarkResult, LockResult,
 };
 use iris_agentic_dev_core::iris::{
     connection::{DiscoverySource, IrisConnection},
@@ -109,14 +109,7 @@ impl BenchmarkCommand {
             std::process::exit(1);
         }
 
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let tasks_dir = std::path::Path::new(manifest_dir)
-            .parent()
-            .unwrap()
-            .join("iris-agentic-dev-core/src/benchmark/tasks/jira_bugs");
-        let run_result = self
-            .run_inner(&iris, &client, &tasks_dir, &skill_content)
-            .await;
+        let run_result = self.run_inner(&iris, &client, &skill_content).await;
         release_lock(&iris, &client, &self.namespace, &container_name).await;
         run_result
     }
@@ -125,10 +118,9 @@ impl BenchmarkCommand {
         &self,
         iris: &IrisConnection,
         client: &reqwest::Client,
-        tasks_dir: &std::path::Path,
         skill_content: &str,
     ) -> Result<()> {
-        let tasks = load_tasks(tasks_dir).context("loading benchmark task suite")?;
+        let tasks = load_embedded_tasks().context("loading benchmark task suite")?;
 
         let iris_version = iris
             .execute_via_generator("write $ZVERSION", &self.namespace, client)

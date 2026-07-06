@@ -75,6 +75,58 @@ pub fn load_tasks(dir: &Path) -> anyhow::Result<Vec<BenchmarkTask>> {
     Ok(tasks)
 }
 
+/// `jira_bugs/*.json` contents embedded at compile time via `include_str!`, so the
+/// shipped binary never depends on a filesystem path that only exists on the build
+/// machine. `load_tasks(dir)` bakes in `env!("CARGO_MANIFEST_DIR")` at the call site,
+/// which is a compile-time constant pointing at wherever the binary happened to be
+/// built (e.g. `/home/runner/work/...` on a GitHub Actions cross-compile runner) —
+/// fine for local `cargo run`/tests, broken for anyone running the released binary.
+macro_rules! embedded_task {
+    ($name:literal) => {
+        include_str!(concat!("tasks/jira_bugs/", $name))
+    };
+}
+
+const EMBEDDED_TASKS: &[&str] = &[
+    embedded_task!("001-null-pointer-check.json"),
+    embedded_task!("002-conditional-mandatory-validation.json"),
+    embedded_task!("003-missing-error-context.json"),
+    embedded_task!("004-save-without-required-field.json"),
+    embedded_task!("005-status-not-updating.json"),
+    embedded_task!("006-date-calculation-off-by-one.json"),
+    embedded_task!("007-field-becomes-editable.json"),
+    embedded_task!("008-validation-not-enforced.json"),
+    embedded_task!("009-undefined-error-export.json"),
+    embedded_task!("010-incorrect-date-sorting.json"),
+    embedded_task!("011-barcode-scan-type-check.json"),
+    embedded_task!("012-end-dated-records-showing.json"),
+    embedded_task!("013-xss-html-injection.json"),
+    embedded_task!("014-invalid-oref-after-delete.json"),
+    embedded_task!("015-performance-degradation.json"),
+    embedded_task!("016-missing-patient-reference.json"),
+    embedded_task!("017-list-duplication.json"),
+    embedded_task!("018-lookup-filter-not-working.json"),
+    embedded_task!("019-duplicate-name-validation.json"),
+    embedded_task!("020-incorrect-uom-conversion.json"),
+    embedded_task!("021-retrospective-date-validation.json"),
+    embedded_task!("056-multi-file-contract-change.json"),
+];
+
+/// Loads the `jira_bugs` task suite from the binary's embedded copy — no filesystem
+/// path involved, works identically regardless of where the binary was built or run.
+/// Use this from the CLI; `load_tasks(dir)` remains available for tests that want to
+/// load an arbitrary directory (e.g. a custom/extended task suite).
+pub fn load_embedded_tasks() -> anyhow::Result<Vec<BenchmarkTask>> {
+    EMBEDDED_TASKS
+        .iter()
+        .enumerate()
+        .map(|(i, contents)| {
+            serde_json::from_str::<BenchmarkTask>(contents)
+                .map_err(|e| anyhow::anyhow!("failed to parse embedded task #{i}: {e}"))
+        })
+        .collect()
+}
+
 /// Per-task outcome. `Error` (FR-012) is distinguishable from a normal `Fail` — used when
 /// the task's expected tool/skill surface no longer matches the current system (e.g. a
 /// tool-level error occurred before the task's own fix was ever exercised), so a stale
