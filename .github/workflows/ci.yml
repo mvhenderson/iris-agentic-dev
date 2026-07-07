@@ -189,7 +189,7 @@ jobs:
             --test test_iris_admin_observability_live \
             --test test_interop_depth_live \
             --test test_sql_power_live \
-            -- --nocapture
+            -- --include-ignored --nocapture
         env:
           IRIS_HOST: ${{ env.IRIS_HOST }}
           IRIS_WEB_PORT: "52773"
